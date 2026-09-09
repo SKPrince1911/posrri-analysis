@@ -362,15 +362,15 @@ def main(quick: bool = False) -> int:
 
     # --------------------------------------------------------------- 10 ----
     figure_dir = paths["figure_dir"]
+    # Built the same way in both modes: --quick skips *rendering*, it must not
+    # change any exported table.
+    bench = benchmark_matrix(
+        frames["benchmark"],
+        cpa_domain_scores=score_res["domains"].set_index("domain_code")["score_0_100"])
     if not quick:
-        bench = benchmark_matrix(
-            frames["benchmark"],
-            cpa_domain_scores=score_res["domains"].set_index("domain_code")["score_0_100"])
         viz.make_all_figures(score_res, delphi_res, sens_res, frames["benchmark"],
                              ahp_domain_weights=ahp_res["domain_weights"],
                              figure_dir=figure_dir)
-    else:
-        bench = benchmark_matrix(frames["benchmark"])
 
     def _figures() -> str:
         missing, empty = [], []
