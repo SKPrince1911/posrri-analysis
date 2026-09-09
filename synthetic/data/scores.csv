@@ -1,0 +1,51 @@
+indicator_code,doc_score,field_score,final_score,evidence_source
+D1.1,2,2,2,Budget allocation document
+D1.2,2,1,1,Equipment inventory register
+D1.3,3,3,3,Inter-agency memorandum of understanding
+D1.4,3,3,3,"Port contingency plan, Annex II"
+D1.5,3,2,2,Inter-agency memorandum of understanding
+D2.1,2,1,1,Inter-agency memorandum of understanding
+D2.2,2,3,3,Gazette notification (statutory instrument)
+D2.3,3,2,2,Exercise after-action report
+D2.4,3,3,3,Site inspection checklist
+D2.5,3,3,3,IMO / regional convention status record
+D3.1,2,1,1,Equipment inventory register
+D3.2,2,2,2,Exercise after-action report
+D3.3,3,3,3,"Key-informant interview, port authority"
+D3.4,2,2,2,Equipment inventory register
+D3.5,2,2,2,Site inspection checklist
+D4.1,0,0,0,Inter-agency memorandum of understanding
+D4.2,1,1,1,Site inspection checklist
+D4.3,2,2,2,Gazette notification (statutory instrument)
+D4.4,2,2,2,Inter-agency memorandum of understanding
+D4.5,1,1,1,Gazette notification (statutory instrument)
+D5.1,2,1,1,Inter-agency memorandum of understanding
+D5.2,1,0,0,Exercise after-action report
+D5.3,1,0,0,Exercise after-action report
+D5.4,1,1,1,IMO / regional convention status record
+D5.5,0,0,0,Gazette notification (statutory instrument)
+D6.1,1,0,0,Inter-agency memorandum of understanding
+D6.2,2,2,2,IMO / regional convention status record
+D6.3,2,2,2,Exercise after-action report
+D6.4,0,0,0,Inter-agency memorandum of understanding
+D6.5,2,0,1,Training records and certificates
+D7.1,0,0,0,"Key-informant interview, port authority"
+D7.2,2,1,1,IMO / regional convention status record
+D7.3,1,0,0,Budget allocation document
+D7.4,2,2,2,Site inspection checklist
+D7.5,1,1,1,Gazette notification (statutory instrument)
+D8.1,3,2,2,Equipment inventory register
+D8.2,0,0,0,Exercise after-action report
+D8.3,1,1,1,IMO / regional convention status record
+D8.4,1,0,0,Equipment inventory register
+D8.5,1,2,2,IMO / regional convention status record
+D9.1,0,0,0,IMO / regional convention status record
+D9.2,2,1,1,Inter-agency memorandum of understanding
+D9.3,1,1,1,Equipment inventory register
+D9.4,2,3,3,Equipment inventory register
+D9.5,2,1,1,Exercise after-action report
+D10.1,2,2,2,Budget allocation document
+D10.2,2,2,2,Equipment inventory register
+D10.3,2,1,1,"Port contingency plan, Annex II"
+D10.4,1,1,1,Budget allocation document
+D10.5,2,1,1,"Key-informant interview, port authority"
