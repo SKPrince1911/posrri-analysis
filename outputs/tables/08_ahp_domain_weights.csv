@@ -1,0 +1,11 @@
+domain_code,domain_name,pillar_code,pillar_name,pillar_weight,domain_weight_within_pillar,domain_weight_global,domain_weight_normalised
+D1,Legal & Regulatory Basis,A,Governance & legal foundation,0.413642218445049,0.5022129608425095,0.20773648325475216,0.20773648325475216
+D2,Designated Authority & Command Structure,A,Governance & legal foundation,0.413642218445049,0.33028817128997573,0.1366211318985439,0.1366211318985439
+D3,Notification & Reporting,B,Operational preparedness & response,0.15334081734161745,0.21882539264538614,0.033554864563343875,0.033554864563343875
+D4,Tiered Response Arrangements,B,Operational preparedness & response,0.15334081734161745,0.2717500233367203,0.04167037069105631,0.04167037069105631
+D5,Resources & Equipment,B,Operational preparedness & response,0.15334081734161745,0.24919587014073627,0.038211898405536064,0.038211898405536064
+D6,Training & Exercises,B,Operational preparedness & response,0.15334081734161745,0.2602287138771573,0.03990368368168121,0.0399036836816812
+D7,Funding & Liability Arrangements,C,"Resilience, financing & continuity",0.4330169642133335,0.34281748848773713,0.14844578814419934,0.14844578814419934
+D8,Plan Currency & Documentation,C,"Resilience, financing & continuity",0.4330169642133335,0.3143650230245258,0.13612538792493487,0.13612538792493487
+D9,Stakeholder Coordination,A,Governance & legal foundation,0.413642218445049,0.1674988678675146,0.06928460329175287,0.06928460329175287
+D10,"Monitoring, Review & After-Action Learning",C,"Resilience, financing & continuity",0.4330169642133335,0.34281748848773713,0.14844578814419934,0.14844578814419934

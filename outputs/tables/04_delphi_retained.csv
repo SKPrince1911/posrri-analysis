@@ -1,0 +1,41 @@
+indicator_code,indicator_name,domain_code,domain_name,pillar_code,final_I_CVI,median_relevance_r2,iqr_relevance_r2
+D1.1,National oil pollution preparedness and response legislation in force,D1,Legal & Regulatory Basis,A,0.9444444444444444,8.0,0.0
+D1.4,Legal mandate and approval status of the national contingency plan,D1,Legal & Regulatory Basis,A,1.0,8.0,0.0
+D1.5,"Enforcement provisions, penalty schedule and prosecution record",D1,Legal & Regulatory Basis,A,0.8888888888888888,8.0,1.0
+D2.1,Legally designated competent national authority for oil spill response,D2,Designated Authority & Command Structure,A,1.0,8.0,0.75
+D2.2,"Designated On-Scene Commander role, appointment and authority",D2,Designated Authority & Command Structure,A,0.9444444444444444,8.0,0.0
+D2.3,Incident command system formally adopted and documented,D2,Designated Authority & Command Structure,A,0.9444444444444444,8.0,0.0
+D2.4,"Clarity of inter-agency roles, delegation and hand-over points",D2,Designated Authority & Command Structure,A,1.0,8.0,1.0
+D2.5,24/7 duty officer roster and command continuity arrangements,D2,Designated Authority & Command Structure,A,0.8888888888888888,8.0,1.75
+D3.2,Mandatory reporting thresholds and notification timelines defined,D3,Notification & Reporting,B,1.0,8.0,0.0
+D3.3,Standardised notification format (POLREP or equivalent) in use,D3,Notification & Reporting,B,1.0,8.0,0.0
+D3.4,Escalation pathway and neighbouring-state / IMO notification,D3,Notification & Reporting,B,0.9444444444444444,8.0,1.0
+D4.1,Tier 1/2/3 definitions adopted with quantitative activation triggers,D4,Tiered Response Arrangements,B,0.9444444444444444,8.0,0.75
+D4.2,Tier 2 regional and mutual-aid agreements formally concluded,D4,Tiered Response Arrangements,B,0.9444444444444444,8.0,0.0
+D4.3,"Tier 3 international assistance arrangements (e.g. OSRL, regional centre)",D4,Tiered Response Arrangements,B,1.0,8.0,0.0
+D4.4,Documented activation criteria and escalation decision protocol,D4,Tiered Response Arrangements,B,0.9444444444444444,8.0,1.0
+D4.5,Customs and immigration fast-track for cross-border response resources,D4,Tiered Response Arrangements,B,1.0,8.0,1.0
+D5.1,Containment boom inventory sufficiency and deployment capacity,D5,Resources & Equipment,B,1.0,8.0,1.0
+D5.2,Mechanical recovery (skimmer) capacity against the design scenario,D5,Resources & Equipment,B,1.0,8.0,1.0
+D5.3,Temporary storage and oily-waste handling and disposal capacity,D5,Resources & Equipment,B,0.9444444444444444,8.0,0.0
+D5.4,"Dispersant policy, approved stockpile and application capability",D5,Resources & Equipment,B,0.8888888888888888,8.0,0.75
+D5.5,"Equipment maintenance, testing and readiness certification regime",D5,Resources & Equipment,B,1.0,8.0,0.75
+D6.1,IMO OPRC Level 1/2/3 training coverage of designated personnel,D6,Training & Exercises,B,0.8333333333333334,8.0,0.75
+D6.3,Full-scale multi-agency exercise conducted within the last three years,D6,Training & Exercises,B,1.0,8.0,0.0
+D6.4,Exercise evaluation against pre-defined performance objectives,D6,Training & Exercises,B,1.0,8.0,0.0
+D6.5,Competency records and refresher-training cycle maintained,D6,Training & Exercises,B,1.0,8.0,0.0
+D7.1,Dedicated standing response fund or ring-fenced budget line,D7,Funding & Liability Arrangements,C,0.9444444444444444,8.0,0.75
+D7.2,Emergency procurement and rapid disbursement mechanism,D7,Funding & Liability Arrangements,C,1.0,8.0,0.0
+D7.4,Cost-recovery and polluter-pays enforcement mechanism,D7,Funding & Liability Arrangements,C,0.9444444444444444,8.0,0.0
+D7.5,Verification of vessel insurance and financial security certificates,D7,Funding & Liability Arrangements,C,0.8888888888888888,8.0,0.75
+D8.1,Port oil spill contingency plan exists and is formally approved,D8,Plan Currency & Documentation,C,1.0,8.0,1.75
+D8.2,Plan review and update cycle of three years or less demonstrably observed,D8,Plan Currency & Documentation,C,1.0,8.0,1.0
+D8.3,Environmental sensitivity mapping and resource atlas currency,D8,Plan Currency & Documentation,C,1.0,8.0,1.0
+D8.4,Scenario-based risk assessment underpinning the plan,D8,Plan Currency & Documentation,C,1.0,8.0,0.0
+D8.5,Controlled distribution and operational accessibility of plan documents,D8,Plan Currency & Documentation,C,1.0,8.0,0.0
+D9.3,"Public, media and affected-community communication protocol",D9,Stakeholder Coordination,A,0.9444444444444444,8.0,0.0
+D9.5,"Joint planning with fisheries, environment and coastal authorities",D9,Stakeholder Coordination,A,0.9444444444444444,8.0,0.75
+D10.1,Incident and near-miss database with systematic record keeping,D10,"Monitoring, Review & After-Action Learning",C,0.9444444444444444,8.0,0.75
+D10.3,Corrective actions tracked to documented closure,D10,"Monitoring, Review & After-Action Learning",C,1.0,8.0,0.0
+D10.4,Readiness performance indicators monitored and reported periodically,D10,"Monitoring, Review & After-Action Learning",C,0.9444444444444444,8.0,0.0
+D10.5,Independent audit or external peer review of preparedness,D10,"Monitoring, Review & After-Action Learning",C,0.9444444444444444,8.0,0.0

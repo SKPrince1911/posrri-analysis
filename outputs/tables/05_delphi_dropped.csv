@@ -1,0 +1,11 @@
+indicator_code,indicator_name,domain_code,final_I_CVI,median_relevance_r2
+D1.2,Ratification and domestication of OPRC 1990 and CLC/FUND conventions,D1,0.5555555555555556,8.0
+D1.3,Port-level statutory instrument for spill preparedness and response,D1,0.7777777777777778,8.0
+D3.1,Single 24/7 point of contact for spill notification,D3,0.7777777777777778,8.0
+D3.5,Logged notification drill performance and response-time records,D3,0.6666666666666666,7.0
+D6.2,"Annual exercise programme (notification, tabletop, deployment)",D6,0.3888888888888889,5.5
+D7.3,"Compensation claims-handling capacity (CLC/FUND, IOPC procedures)",D7,0.2777777777777778,5.0
+D9.1,Standing multi-agency coordination committee with terms of reference,D9,0.5555555555555556,7.0
+D9.2,Terminal operators and industry integrated into the port plan,D9,0.2222222222222222,5.5
+D9.4,Regional cooperation arrangements (Bay of Bengal / SACEP mechanisms),D9,0.2777777777777778,6.0
+D10.2,Mandatory after-action review following incidents and exercises,D10,0.2777777777777778,4.0

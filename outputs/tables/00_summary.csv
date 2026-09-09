@@ -1,0 +1,17 @@
+metric,value,notes
+Index structure,3 pillars / 10 domains / 50 indicators,
+Delphi experts,18,"rounds [1, 2]"
+Indicators retained (I-CVI >= 0.78),40,of 50 in round 2
+Indicators meeting consensus,43,">=80% rating 7-9, or median >=7 with IQR <=2"
+S-CVI/Ave (round 2),0.8667,target >= 0.9; not met
+S-CVI/UA (round 2),0.4,proportion of items with universal agreement
+"Cohen's kappa, round 1 vs 2",0.6988,5 decisions changed
+AHP experts,8,14 matrices each
+AHP matrices with CR >= 0.10,0,of 126 checked; max CR 0.0496
+Global weights sum,1.0,across all 50 indicators
+POSRRI (AHP weights),51.12,Developing
+POSRRI (equal weights),45.33,Emerging
+Strongest domain,D2,Designated Authority & Command Structure
+Weakest domain,D5,Resources & Equipment
+Mean implementation gap,0.32,"documentary minus field score, 0-3 points"
+Spearman rho (AHP vs equal),0.9483,p = 2.93e-05; 5 domains change rank
