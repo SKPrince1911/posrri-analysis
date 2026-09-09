@@ -1,5 +1,9 @@
 # ---- Real participant / field data: NEVER commit ----------------------------
-data/raw/
+# Ignore everything inside data/raw/ but keep the directory itself, so a fresh
+# clone has somewhere obvious to put real data. (Ignoring the directory rather
+# than its contents would stop git descending into it, and the .gitkeep
+# exception below would never be reached.)
+data/raw/*
 !data/raw/.gitkeep
 
 # Generated outputs (outputs/) are derived solely from the committed synthetic
