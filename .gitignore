@@ -1,0 +1,39 @@
+# ---- Real participant / field data: NEVER commit ----------------------------
+data/raw/
+!data/raw/.gitkeep
+
+# ---- Generated analysis outputs --------------------------------------------
+outputs/figures/*
+outputs/tables/*
+!outputs/**/.gitkeep
+
+# ---- Notebooks --------------------------------------------------------------
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+*-checkpoint.ipynb
+
+# ---- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.python-version
+
+# ---- Tooling / OS -----------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---- Google Colab / Drive artefacts ----------------------------------------
+drive/
+sample_data/
