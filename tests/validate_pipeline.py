@@ -388,6 +388,35 @@ def main(quick: bool = False) -> int:
 
     cl.check("All 6 figures exist in outputs/figures", _figures)
 
+    def _rubric_wording() -> str:
+        """The 0-3 rubric is locked; figures and docs must not drift from it."""
+        expected = {0: "absent", 1: "partial or ambiguous",
+                    2: "defined", 3: "defined and verified"}
+        assert config.SCORE_RUBRIC == expected, (
+            f"config.SCORE_RUBRIC has drifted: {config.SCORE_RUBRIC}")
+        for level, text in expected.items():
+            assert viz.SCORE_LABELS[level] == f"{level}  {text}", (
+                f"figure colourbar label for {level} is "
+                f"{viz.SCORE_LABELS[level]!r}, expected {level}  {text!r}")
+        # Superseded wording must not survive anywhere in the source or docs.
+        banned = ("substantial", "fully met")
+        offenders = []
+        for path in list(_ROOT.glob("*.py")) + list(_ROOT.glob("*.md")) + \
+                list(_ROOT.glob("src/*.py")) + list(_ROOT.glob("tests/*.py")) + \
+                list(_ROOT.glob("synthetic/*.py")) + list(_ROOT.glob("notebooks/*.ipynb")) + \
+                list(_ROOT.glob("data/templates/*.md")):
+            text = path.read_text(encoding="utf-8", errors="ignore").lower()
+            # This check names the banned strings itself; skip its own source.
+            if path.name == "validate_pipeline.py":
+                continue
+            for word in banned:
+                if word in text:
+                    offenders.append(f"{path.relative_to(_ROOT)}:{word}")
+        assert not offenders, f"superseded rubric wording still present: {offenders}"
+        return "0/1/2/3 = absent / partial or ambiguous / defined / defined and verified"
+
+    cl.check("Scoring rubric wording is locked and consistent", _rubric_wording)
+
     # --------------------------------------------------------------- 11 ----
     def _tables() -> str:
         tables = collect_tables(delphi_res, ahp_res, score_res, sens_res,

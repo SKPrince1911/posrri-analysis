@@ -185,7 +185,7 @@ strings such as `1/3`.
 ### `scores.csv`
 `indicator_code, doc_score, field_score, final_score, evidence_source`
 One row per indicator (50 rows). All three scores use the 0–3 rubric:
-**0** absent · **1** partial · **2** substantial · **3** fully met and evidenced.
+**0** absent · **1** partial or ambiguous · **2** defined · **3** defined and verified.
 `doc_score` is work-as-imagined (documentary evidence), `field_score` is
 work-as-done (field verification), `final_score` is the adjudicated value the
 index uses.

@@ -132,10 +132,24 @@ AHP_LEVELS = ("pillar", "domain", "indicator")
 # Scoring parameters
 # ---------------------------------------------------------------------------
 
-#: Indicators are scored on a 0-3 rubric (0 absent, 1 partial, 2 substantial,
-#: 3 fully met and evidenced).
+#: The locked 0-3 scoring rubric. This is the single source of truth for the
+#: wording: figures, tables and documentation all read it from here, so the
+#: level descriptions cannot drift apart between the code and the manuscript.
+SCORE_RUBRIC = {
+    0: "absent",
+    1: "partial or ambiguous",
+    2: "defined",
+    3: "defined and verified",
+}
+
 SCORE_SCALE = (0, 3)
 MAX_INDICATOR_SCORE = 3
+
+
+def rubric_label(score: int, with_number: bool = True) -> str:
+    """Render one rubric level, e.g. ``"2  defined"``."""
+    text = SCORE_RUBRIC[int(score)]
+    return f"{int(score)}  {text}" if with_number else text
 
 #: Interpretation bands for the 0-100 index (used in tables and figure legends).
 READINESS_BANDS = (

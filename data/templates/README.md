@@ -44,7 +44,7 @@ One row per indicator (50 rows).
 | `final_score` | int/float | 0-3 | adjudicated score used by the index |
 | `evidence_source` | str | free text | citation / document / interview reference |
 
-Rubric: 0 = absent, 1 = partial, 2 = substantial, 3 = fully met and evidenced.
+Rubric (locked; defined once in `config.SCORE_RUBRIC`): 0 = absent, 1 = partial or ambiguous, 2 = defined, 3 = defined and verified.
 
 ## `survey.csv`
 One row per respondent; `q1`..`q15` are Likert items (1-5).
