@@ -61,6 +61,20 @@ DOMAINS: Dict[str, str] = {
     "D10": "Monitoring, Review & After-Action Learning",
 }
 
+#: Compact domain labels for figure axes, where the full names do not fit.
+DOMAIN_SHORT: Dict[str, str] = {
+    "D1": "Legal basis",
+    "D2": "Authority & command",
+    "D3": "Notification",
+    "D4": "Tiered response",
+    "D5": "Resources & equipment",
+    "D6": "Training & exercises",
+    "D7": "Funding & liability",
+    "D8": "Plan currency",
+    "D9": "Coordination",
+    "D10": "Monitoring & learning",
+}
+
 #: Canonical domain order D1..D10 (not the pillar-grouped order).
 DOMAIN_ORDER: List[str] = [f"D{i}" for i in range(1, 11)]
 

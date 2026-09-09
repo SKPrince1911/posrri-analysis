@@ -2,10 +2,10 @@
 data/raw/
 !data/raw/.gitkeep
 
-# ---- Generated analysis outputs --------------------------------------------
-outputs/figures/*
-outputs/tables/*
-!outputs/**/.gitkeep
+# Generated outputs (outputs/) are derived solely from the committed synthetic
+# data and ARE tracked, so reviewers can see the figures and tables without
+# running the pipeline. Re-running the notebook or tests regenerates them
+# byte-for-byte from the fixed seed.
 
 # ---- Notebooks --------------------------------------------------------------
 .ipynb_checkpoints/
