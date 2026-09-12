@@ -45,6 +45,7 @@ if str(_ROOT) not in sys.path:
 import config  # noqa: E402
 from src import structure as st  # noqa: E402
 from src.ahp import consistency_ratio, priority_weights  # noqa: E402
+from src.survey_ingest import load_survey_export  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Panel sizes
@@ -52,8 +53,12 @@ from src.ahp import consistency_ratio, priority_weights  # noqa: E402
 
 N_DELPHI_EXPERTS = 18
 N_AHP_EXPERTS = 8
-N_SURVEY_RESPONDENTS = 50
+N_SURVEY_RESPONDENTS = 50          # respondents who consent, i.e. analysed
+N_SURVEY_NONCONSENT = 3            # rows the consent filter must drop
 N_SURVEY_ITEMS = 15
+
+#: The seven five-point Likert items, in questionnaire order.
+LIKERT_POSITIONS = ["q1", "q3", "q4", "q5", "q8", "q9", "q10"]
 
 #: Admissible Saaty judgements as (value, label) pairs, reciprocals included.
 SAATY_CHOICES: List[tuple] = (
@@ -312,20 +317,144 @@ def generate_scores(rng: np.random.Generator) -> pd.DataFrame:
 # 4. Stakeholder survey
 # ---------------------------------------------------------------------------
 
-def generate_survey(rng: np.random.Generator) -> pd.DataFrame:
-    """50 respondents x 15 Likert items (1-5) with respondent and item effects."""
-    respondent_effect = rng.normal(0.0, 0.55, size=N_SURVEY_RESPONDENTS)
-    item_effect = rng.normal(0.0, 0.45, size=N_SURVEY_ITEMS)
-    grand_mean = 3.05
+#: Question wording as it would appear in the Google Form. The ingest matches
+#: items BY POSITION, so these strings exist only to make the synthetic export
+#: realistic -- editing any of them must not change the ingested result.
+SURVEY_HEADERS = [
+    "Timestamp",
+    "Do you consent to take part in this study? Responses are anonymised and "
+    "used only for academic research.",
+    "How confident are you that the port oil spill contingency plan would work "
+    "in a real Tier 2 spill?",                                         # q1  Likert
+    "Are you aware of a designated On-Scene Commander for oil spill response "
+    "at this port?",                                                   # q2  Yes/Unsure/No
+    "How clear are your own roles and responsibilities during a spill response?",
+                                                                       # q3  Likert
+    "How adequate do you consider the response equipment currently available?",
+                                                                       # q4  Likert
+    "How effective is coordination between agencies during a spill response?",
+                                                                       # q5  Likert
+    "Have you been given access to the port oil spill contingency plan?",
+                                                                       # q6  Yes/Unsure/No
+    "How often does your organisation take part in oil spill response exercises?",
+                                                                       # q7  frequency
+    "How confident are you in the notification and reporting chain for a spill?",
+                                                                       # q8  Likert
+    "How adequate is the funding available for oil spill preparedness?",
+                                                                       # q9  Likert
+    "How confident are you that lessons from incidents and exercises are acted "
+    "upon?",                                                           # q10 Likert
+    "In your view, what is the single greatest barrier to oil spill "
+    "preparedness at this port?",                                      # q11 text
+    "What one change would most improve oil spill readiness at this port?",
+                                                                       # q12 text
+    "How many years have you worked in port operations, shipping or "
+    "environmental regulation?",                                       # q13 bands
+    "Have you received formal oil spill response training (e.g. IMO OPRC Level "
+    "1, 2 or 3)?",                                                     # q14 Yes/No
+    "Which organisation or agency do you work for? (optional)",        # q15 text
+]
+
+_BARRIERS = [
+    "Equipment is not maintained", "No dedicated budget",
+    "Unclear lines of authority", "Too few trained staff",
+    "Plan is out of date", "Agencies do not exercise together", "",
+]
+_IMPROVEMENTS = [
+    "Fund a standing response unit", "Run a full-scale annual exercise",
+    "Appoint a permanent on-scene commander", "Replace ageing booms",
+    "Publish the plan to all terminals", "Set up an incident database", "",
+]
+_ORGANISATIONS = [
+    "Port authority", "Department of Environment", "Coast guard",
+    "Terminal operator", "Shipping agent", "Fisheries department", "",
+]
+
+
+def generate_survey_export(rng: np.random.Generator) -> pd.DataFrame:
+    """A synthetic *raw Google Forms export*, before any cleaning.
+
+    Deliberately messy in the ways a real export is, so that
+    :func:`src.survey_ingest.load_survey_export` is exercised rather than
+    merely called: it carries a Timestamp column and a Q0 consent question,
+    rows in submission order rather than sorted, non-consenting rows that must
+    be dropped, category labels rather than codes, "Don't know" answers that
+    must become missing, blank free-text answers, and a handful of labels
+    carrying the curly apostrophes and en-dashes Google Sheets substitutes.
+
+    The seven Likert confidence items load on a shared respondent factor, so
+    the Cronbach's alpha reported by ``src.survey_analysis`` is meaningful
+    rather than an artefact of independent noise. The loading (0.62) and
+    residual SD (0.65) are calibrated to put alpha in the low-to-mid 0.8s --
+    the range a well-behaved scale actually occupies. A stronger loading gave
+    alpha > 0.95, which in a real study signals redundant items rather than a
+    good scale, and would have been a misleading demonstration.
+    """
+    n = N_SURVEY_RESPONDENTS + N_SURVEY_NONCONSENT
+
+    # Shared respondent factor plus per-item difficulty for the Likert items.
+    theta = rng.normal(0.0, 1.0, size=n)
+    item_effect = rng.normal(0.0, 0.40, size=len(LIKERT_POSITIONS))
+
+    # Submission times over roughly six weeks, then shuffled so the ingest has
+    # to sort them: respondent_id must follow timestamp order, not file order.
+    minutes = np.sort(rng.integers(0, 60 * 24 * 42, size=n))
+    minutes = rng.permutation(minutes)
+    base = np.datetime64("2026-03-02T08:00:00")
+
+    consent = np.array(["Yes"] * n, dtype=object)
+    consent[rng.choice(n, size=N_SURVEY_NONCONSENT, replace=False)] = "No"
 
     rows = []
-    for r in range(N_SURVEY_RESPONDENTS):
-        row = {"respondent_id": f"R{r + 1:03d}"}
-        for q in range(N_SURVEY_ITEMS):
-            val = grand_mean + respondent_effect[r] + item_effect[q] + rng.normal(0, 0.6)
-            row[f"q{q + 1}"] = int(np.clip(round(val), 1, 5))
-        rows.append(row)
-    return pd.DataFrame(rows)
+    for i in range(n):
+        stamp = base + np.timedelta64(int(minutes[i]), "m")
+        # Google Forms' default US locale format.
+        ts = pd.Timestamp(stamp).strftime("%-m/%-d/%Y %-H:%M:%S")
+
+        likert = {}
+        for k, item in enumerate(LIKERT_POSITIONS):
+            val = 3.0 + 0.62 * theta[i] + item_effect[k] + rng.normal(0, 0.65)
+            likert[item] = str(int(np.clip(round(val), 1, 5)))
+
+        # Awareness tracks confidence, so the coded items are not independent
+        # of the Likert block -- as in real data.
+        aware = "Yes" if theta[i] > 0.25 else ("Unsure" if theta[i] > -0.7 else "No")
+        access = "Yes" if theta[i] > 0.55 else ("Unsure" if theta[i] > -0.4 else "No")
+
+        freq_roll = rng.random()
+        if freq_roll < 0.10:
+            # Curly apostrophe for some rows: Sheets substitutes it silently.
+            frequency = "Don\u2019t know" if rng.random() < 0.5 else "Don't know"
+        else:
+            frequency = str(rng.choice(["Never", "Rarely", "Sometimes", "Often"],
+                                       p=[0.30, 0.34, 0.26, 0.10]))
+
+        band = str(rng.choice(["Less than 2 years", "2-5 years", "6-10 years",
+                               "More than 10 years"], p=[0.16, 0.32, 0.30, 0.22]))
+        if band == "2-5 years" and rng.random() < 0.35:
+            band = "2\u20135 years"                  # en-dash variant
+
+        rows.append({
+            SURVEY_HEADERS[0]: ts,
+            SURVEY_HEADERS[1]: consent[i],
+            SURVEY_HEADERS[2]: likert["q1"],
+            SURVEY_HEADERS[3]: aware,
+            SURVEY_HEADERS[4]: likert["q3"],
+            SURVEY_HEADERS[5]: likert["q4"],
+            SURVEY_HEADERS[6]: likert["q5"],
+            SURVEY_HEADERS[7]: access,
+            SURVEY_HEADERS[8]: frequency,
+            SURVEY_HEADERS[9]: likert["q8"],
+            SURVEY_HEADERS[10]: likert["q9"],
+            SURVEY_HEADERS[11]: likert["q10"],
+            SURVEY_HEADERS[12]: _BARRIERS[int(rng.integers(len(_BARRIERS)))],
+            SURVEY_HEADERS[13]: _IMPROVEMENTS[int(rng.integers(len(_IMPROVEMENTS)))],
+            SURVEY_HEADERS[14]: band,
+            SURVEY_HEADERS[15]: "Yes" if theta[i] > -0.15 else "No",
+            SURVEY_HEADERS[16]: _ORGANISATIONS[int(rng.integers(len(_ORGANISATIONS)))],
+        })
+
+    return pd.DataFrame(rows, columns=SURVEY_HEADERS)
 
 
 # ---------------------------------------------------------------------------
@@ -380,22 +509,37 @@ def generate_all(seed: int = config.RANDOM_SEED,
     delphi = generate_delphi(rng_delphi)
     ahp = generate_ahp(rng_ahp)
     scores = generate_scores(rng_scores)
-    survey = generate_survey(rng_survey)
+    survey_export = generate_survey_export(rng_survey)
     benchmark = generate_benchmark(scores, rng_bench)
 
     frames = {
         "delphi_ratings": delphi,
         "ahp_pairwise": ahp,
         "scores": scores,
-        "survey": survey,
+        "survey_export": survey_export,
         "benchmark": benchmark,
     }
+
+    def _report(path: Path, frame: pd.DataFrame) -> None:
+        if verbose:
+            shown = path.relative_to(_ROOT) if path.is_relative_to(_ROOT) else path
+            print(f"  wrote {shown}  ({len(frame):,} rows x {frame.shape[1]} cols)")
+
     for name, frame in frames.items():
         path = outdir / f"{name}.csv"
         frame.to_csv(path, index=False)
-        if verbose:
-            print(f"  wrote {path.relative_to(_ROOT) if path.is_relative_to(_ROOT) else path}"
-                  f"  ({len(frame):,} rows x {frame.shape[1]} cols)")
+        _report(path, frame)
+
+    # survey.csv is not generated directly: it is produced by running the real
+    # ingest over the synthetic raw export. That keeps one source of truth for
+    # the survey coding, and means the committed demonstration file is
+    # schema-valid by construction rather than by a parallel implementation
+    # that could drift from src/survey_ingest.py.
+    survey = load_survey_export(outdir / "survey_export.csv", data_dir=outdir,
+                                write=True, verbose=False)
+    frames["survey"] = survey
+    _report(outdir / "survey.csv", survey)
+
     return frames
 
 
@@ -422,7 +566,10 @@ def _cli() -> None:
     s = frames["scores"]
     print(f"Scores      : mean final={s['final_score'].mean():.2f}, "
           f"mean doc-field gap={(s['doc_score'] - s['field_score']).mean():+.2f}")
-    print(f"Survey      : {len(frames['survey'])} respondents x {N_SURVEY_ITEMS} items")
+    e, sv = frames["survey_export"], frames["survey"]
+    print(f"Survey      : {len(e)} raw rows -> {len(sv)} consenting respondents "
+          f"x {N_SURVEY_ITEMS} items "
+          f"({len(e) - len(sv)} dropped on consent)")
     b = frames["benchmark"]
     print(f"Benchmark   : {b['port'].nunique()} ports x {b['domain_code'].nunique()} domains")
 

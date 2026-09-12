@@ -47,7 +47,35 @@ One row per indicator (50 rows).
 Rubric (locked; defined once in `config.SCORE_RUBRIC`): 0 = absent, 1 = partial or ambiguous, 2 = defined, 3 = defined and verified.
 
 ## `survey.csv`
-One row per respondent; `q1`..`q15` are Likert items (1-5).
+One row per consenting respondent. **Normally produced by the ingest, not typed
+by hand:** run `python src/survey_ingest.py <raw Forms export>.csv`, which
+writes this file to `data/raw/`.
+
+| column | type | values |
+|---|---|---|
+| `respondent_id` | str | `AGT-001`, `AGT-002`, … assigned in ascending timestamp order |
+| `q1, q3, q4, q5, q8, q9, q10` | int | 1-5 five-point Likert (intensity) |
+| `q2, q6` | int | Yes = 2, Unsure = 1, No = 0 |
+| `q7` | int | Never = 1, Rarely = 2, Sometimes = 3, Often = 4; "Don't know" → blank |
+| `q13` | int | < 2 years = 1, 2-5 = 2, 6-10 = 3, > 10 = 4 |
+| `q14` | int | Yes = 1, No = 0 |
+| `q11, q12, q15` | str | free text, kept verbatim |
+
+The coding tables are defined once, at the top of `src/survey_ingest.py`, and
+nothing else in the pipeline recodes survey answers.
+
+## `survey_export.csv` (raw Google Forms export)
+The *input* to the ingest, not an analysis file. Column order is what matters,
+because the headers are full question sentences and change whenever the form is
+edited — the ingest maps items **by position**:
+
+| position | content |
+|---|---|
+| 1 | `Timestamp` (added by Forms; required, and used for the respondent ordering) |
+| 2 | consent question (Q0); rows not answering "Yes" are reported and dropped |
+| 3-17 | the 15 items, in questionnaire order, as category labels or 1-5 integers |
+
+A synthetic example is committed at `synthetic/data/survey_export.csv`.
 
 ## `benchmark.csv`
 One row per domain x port (10 x 4 = 40 rows).

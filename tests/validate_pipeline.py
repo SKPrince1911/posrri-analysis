@@ -52,6 +52,10 @@ from src.ahp import (consistency_ratio, equal_weights, expected_matrices,  # noq
 from src.delphi import cohens_kappa, run_delphi  # noqa: E402
 from src.report import collect_tables, export_tables  # noqa: E402
 from src.scoring import benchmark_matrix, score_index  # noqa: E402
+from src.survey_analysis import cronbach_alpha, run_survey_analysis  # noqa: E402
+from src.survey_ingest import (ALLOWED_VALUES, ITEMS, LIKERT_ITEMS,  # noqa: E402
+                               RECODE, TEXT_ITEMS, load_survey_export,
+                               read_survey)
 from src.sensitivity import run_sensitivity  # noqa: E402
 
 TOL = 1e-9
@@ -119,7 +123,7 @@ def main(quick: bool = False) -> int:
     paths = config.resolve_paths(use_synthetic=True)
     data_dir = paths["data_dir"]
     needed = ["delphi_ratings.csv", "ahp_pairwise.csv", "scores.csv",
-              "survey.csv", "benchmark.csv"]
+              "survey.csv", "benchmark.csv", "survey_export.csv"]
 
     if any(not (data_dir / f).exists() for f in needed):
         print("Synthetic data missing; generating it...")
@@ -138,6 +142,8 @@ def main(quick: bool = False) -> int:
         assert frames["ahp_pairwise"]["expert_id"].nunique() == 8, "expected 8 AHP experts"
         assert len(frames["scores"]) == 50, "expected 50 scored indicators"
         assert len(frames["survey"]) == 50, "expected 50 survey respondents"
+        assert len(frames["survey_export"]) == 53, (
+            "expected 53 raw survey rows (50 consenting + 3 to be dropped)")
         assert len(frames["benchmark"]) == 40, "expected 10 domains x 4 ports"
         return (f"{len(d):,} Delphi + {len(frames['ahp_pairwise']):,} AHP rows, "
                 f"50 scores, 50 survey, 40 benchmark")
@@ -158,7 +164,8 @@ def main(quick: bool = False) -> int:
                                               obj=name)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-        return f"seed {config.RANDOM_SEED} reproduces all 5 files exactly"
+        return (f"seed {config.RANDOM_SEED} reproduces all "
+                f"{len(regenerated)} files exactly")
 
     cl.check("Synthetic generation is deterministic", _determinism)
 
@@ -417,10 +424,156 @@ def main(quick: bool = False) -> int:
 
     cl.check("Scoring rubric wording is locked and consistent", _rubric_wording)
 
+    # ---------------------------------------------------- survey ingest ----
+    # Loaded inside the first check rather than at module level, so a
+    # malformed survey.csv is reported as a FAIL on the checklist instead of
+    # aborting the whole run with a traceback. Later checks read from `loaded`
+    # and fail cleanly if the load did not succeed.
+    export_path = data_dir / "survey_export.csv"
+    loaded: dict = {}
+
+    def _survey_schema() -> str:
+        ingested = load_survey_export(export_path, write=False, verbose=False)
+        survey = read_survey(data_dir / "survey.csv")
+        loaded["ingested"], loaded["survey"] = ingested, survey
+
+        expected = ["respondent_id"] + ITEMS
+        assert list(ingested.columns) == expected, (
+            f"ingest produced columns {list(ingested.columns)}, expected {expected}")
+        assert list(survey.columns) == expected, (
+            f"survey.csv columns {list(survey.columns)}, expected {expected}")
+        assert len(ITEMS) == 15, f"expected 15 items, got {len(ITEMS)}"
+
+        # The committed survey.csv must be exactly what the ingest produces:
+        # if they diverge, the demonstration file was written by something
+        # other than src/survey_ingest.py.
+        pd.testing.assert_frame_equal(
+            ingested.reset_index(drop=True),
+            survey.reset_index(drop=True),
+            check_dtype=False, obj="survey.csv vs ingest output")
+
+        raw = pd.read_csv(export_path, dtype=str)
+        n_dropped = len(raw) - len(ingested)
+        assert n_dropped > 0, (
+            "the synthetic export contains no non-consenting rows, so the "
+            "consent filter is never exercised")
+        return (f"respondent_id + q1..q15; {len(ingested)} rows from {len(raw)} "
+                f"raw ({n_dropped} dropped on consent)")
+
+    cl.check("Survey ingest produces the exact schema", _survey_schema)
+
+    def _survey_ids() -> str:
+        assert loaded, "survey data failed to load (see the schema check above)"
+        # Both the ingest output AND the committed file: checking only the
+        # freshly ingested frame would be vacuous, since the ingest generates
+        # the ids itself and cannot produce a duplicate.
+        for source, frame in (("ingest output", loaded["ingested"]),
+                              ("survey.csv", loaded["survey"])):
+            ids = frame["respondent_id"]
+            dupes = ids[ids.duplicated()].tolist()
+            assert not dupes, f"{source}: duplicate respondent_id {dupes[:5]}"
+            assert ids.notna().all(), f"{source}: missing respondent_id"
+            expected = [f"AGT-{k:03d}" for k in range(1, len(ids) + 1)]
+            assert ids.tolist() == expected, (
+                f"{source}: respondent_id is not AGT-001..AGT-{len(ids):03d} in "
+                f"order; first mismatch at index "
+                f"{next(i for i, (a, b) in enumerate(zip(ids, expected)) if a != b)}")
+        ids = loaded["ingested"]["respondent_id"]
+
+        # IDs must follow ascending timestamp order, not file order.
+        raw = pd.read_csv(export_path, dtype=str)
+        stamps = pd.to_datetime(raw.iloc[:, 0], errors="coerce", format="mixed")
+        consent = raw.iloc[:, 1].astype(str).str.strip().str.casefold()
+        kept = stamps[consent.eq("yes")].sort_values()
+        assert kept.is_monotonic_increasing and len(kept) == len(ids), (
+            "respondent_id ordering does not follow ascending timestamp")
+        assert not stamps.is_monotonic_increasing, (
+            "the synthetic export is already timestamp-sorted, so the sort is "
+            "never exercised")
+        return f"{len(ids)} unique ids, AGT-001..AGT-{len(ids):03d}, timestamp-ordered"
+
+    cl.check("Survey respondent_ids are unique and ordered", _survey_ids)
+
+    def _survey_codes() -> str:
+        assert loaded, "survey data failed to load (see the schema check above)"
+        survey = loaded["survey"]
+        for item, allowed in ALLOWED_VALUES.items():
+            values = survey[item].dropna()
+            assert values.map(lambda v: float(v).is_integer()).all(), (
+                f"{item}: non-integer coded value present")
+            present = set(values.astype(int).tolist())
+            unexpected = present - allowed
+            assert not unexpected, (
+                f"{item}: value(s) {sorted(unexpected)} outside allowed "
+                f"{sorted(allowed)}")
+        for item in LIKERT_ITEMS:
+            values = survey[item].dropna().astype(int)
+            assert values.between(1, 5).all(), (
+                f"{item}: Likert value outside 1-5")
+        # Items with no mapping and no Likert role must remain free text.
+        for item in TEXT_ITEMS:
+            assert item not in RECODE and item not in LIKERT_ITEMS, (
+                f"{item} is listed as free text but is also coded")
+            assert str(survey[item].dtype) in ("string", "object"), (
+                f"{item} should be text, got dtype {survey[item].dtype}")
+        coded = [i for i in ITEMS if i not in TEXT_ITEMS]
+        return (f"{len(coded)} coded items within their allowed sets; "
+                f"{len(TEXT_ITEMS)} text items left as text")
+
+    cl.check("Survey coded values within allowed sets", _survey_codes)
+
+    def _survey_analysis() -> str:
+        assert loaded, "survey data failed to load (see the schema check above)"
+        survey = loaded["survey"]
+        res = run_survey_analysis(survey, figure_dir=figure_dir,
+                                  make_figure=not quick)
+        alpha = res["alpha"]
+        value = alpha["alpha"]
+        assert isinstance(value, float) and np.isfinite(value), (
+            "Cronbach's alpha is not a finite float")
+        assert -1.0 <= value <= 1.0, f"alpha {value} outside [-1, 1]"
+        assert alpha["n_items"] == 7, (
+            f"expected a 7-item scale, got {alpha['n_items']}")
+        assert len(res["likert"]) == len(LIKERT_ITEMS), (
+            "descriptives missing for some Likert items")
+        assert res["likert"]["mean"].between(1, 5).all(), (
+            "a Likert item mean fell outside 1-5")
+        assert res["likert"]["sd"].notna().all(), "a Likert SD is missing"
+
+        # Frequency tables must account for every valid response.
+        freq = res["frequencies"]
+        for item, block in freq.groupby("item"):
+            assert int(block["count"].sum()) == int(block["n_valid"].iloc[0]), (
+                f"{item}: frequency counts do not sum to n_valid")
+            assert abs(block["pct_of_valid"].sum() - 100.0) < 1e-9, (
+                f"{item}: percentages do not sum to 100")
+
+        # Alpha on 7 identical columns is exactly 1.0; a useful sanity anchor.
+        same = pd.DataFrame({f"i{k}": survey["q1"].astype(float) for k in range(7)})
+        assert abs(cronbach_alpha(same)["alpha"] - 1.0) < 1e-9, (
+            "alpha on seven identical items is not 1.0")
+        return (f"alpha = {value:.3f} ({alpha['interpretation']}), "
+                f"{alpha['n_respondents']} complete cases")
+
+    cl.check("Survey descriptives and Cronbach's alpha", _survey_analysis)
+
+    def _survey_figure() -> str:
+        missing = []
+        for ext in config.FIGURE_FORMATS:
+            path = figure_dir / f"{viz.SURVEY_FIGURE_STEM}.{ext}"
+            if not path.exists() or path.stat().st_size < 1024:
+                missing.append(path.name)
+        assert not missing, f"survey figure missing or too small: {missing}"
+        return f"{viz.SURVEY_FIGURE_STEM} in {len(config.FIGURE_FORMATS)} formats"
+
+    cl.check("Survey Likert figure exists", _survey_figure)
+
     # --------------------------------------------------------------- 11 ----
     def _tables() -> str:
+        survey_res = (run_survey_analysis(loaded["survey"], make_figure=False)
+                      if loaded else None)
         tables = collect_tables(delphi_res, ahp_res, score_res, sens_res,
-                                benchmark_0_100=bench)
+                                benchmark_0_100=bench, survey_result=survey_res)
         written = export_tables(tables, table_dir=paths["table_dir"])
         for key, path in written.items():
             assert path.exists(), f"table {key} was not written"

@@ -1,0 +1,17 @@
+item,label,code,category,count,pct_of_valid,n_valid,n_missing
+q2,Aware of designated On-Scene Commander,0,No,14,28.0,50,0
+q2,Aware of designated On-Scene Commander,1,Unsure,16,32.0,50,0
+q2,Aware of designated On-Scene Commander,2,Yes,20,40.0,50,0
+q6,Given access to the contingency plan,0,No,20,40.0,50,0
+q6,Given access to the contingency plan,1,Unsure,13,26.0,50,0
+q6,Given access to the contingency plan,2,Yes,17,34.0,50,0
+q7,Frequency of exercise participation,1,Never,13,30.232558139534884,43,7
+q7,Frequency of exercise participation,2,Rarely,15,34.883720930232556,43,7
+q7,Frequency of exercise participation,3,Sometimes,13,30.232558139534884,43,7
+q7,Frequency of exercise participation,4,Often,2,4.651162790697675,43,7
+q13,Years of relevant experience,1,Less than 2 years,6,12.0,50,0
+q13,Years of relevant experience,2,2-5 years,22,44.0,50,0
+q13,Years of relevant experience,3,6-10 years,10,20.0,50,0
+q13,Years of relevant experience,4,More than 10 years,12,24.0,50,0
+q14,Formal OPRC training received,0,No,24,48.0,50,0
+q14,Formal OPRC training received,1,Yes,26,52.0,50,0

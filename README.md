@@ -52,7 +52,16 @@ python src/delphi.py         # Delphi consensus, I-CVI/S-CVI, Cohen's kappa
 python src/ahp.py            # AHP weights and consistency ratios
 python src/scoring.py        # domain, pillar and overall POSRRI
 python src/sensitivity.py    # AHP versus equal weights
-python src/viz.py            # regenerate all six figures
+python src/viz.py            # regenerate the six core figures
+python src/survey_analysis.py    # survey descriptives, alpha and Figure 7
+```
+
+To clean a raw survey export:
+
+```bash
+# Writes data/raw/survey.csv (git-ignored) and prints the ingest summary
+python src/survey_ingest.py path/to/forms_export.csv
+python src/survey_ingest.py export.csv --no-write   # dry run, report only
 ```
 
 For the full narrated run with tables and figures, open
@@ -113,7 +122,9 @@ posrri-analysis/
 │   ├── ahp.py                     weights, consistency ratios, AIJ aggregation
 │   ├── scoring.py                 weighted domain / pillar / overall POSRRI
 │   ├── sensitivity.py             AHP versus equal weights, Spearman rho
-│   ├── viz.py                     six publication-grade figures
+│   ├── survey_ingest.py           Google Forms export -> survey.csv schema
+│   ├── survey_analysis.py         survey descriptives, Cronbach's alpha
+│   ├── viz.py                     seven publication-grade figures
 │   └── report.py                  table assembly and CSV/Excel export
 ├── notebooks/
 │   └── 00_run_all.ipynb           Colab-ready end-to-end run
@@ -191,7 +202,17 @@ work-as-done (field verification), `final_score` is the adjudicated value the
 index uses.
 
 ### `survey.csv`
-`respondent_id, q1 … q15` — one row per respondent, Likert items 1–5.
+`respondent_id, q1 … q15` — one row per consenting respondent. Normally
+**produced by `src/survey_ingest.py`**, not typed by hand. `q1, q3, q4, q5, q8,
+q9, q10` are five-point Likert (1–5); `q2, q6` are Yes/Unsure/No coded 2/1/0;
+`q7` is Never/Rarely/Sometimes/Often coded 1–4 with "Don't know" missing; `q13`
+is experience bands coded 1–4; `q14` is Yes/No coded 1/0; `q11, q12, q15` are
+free text. Full table in `data/templates/README.md`.
+
+### `survey_export.csv` (raw Google Forms export)
+The *input* to the ingest: `Timestamp`, the consent question (Q0), then the 15
+items in questionnaire order. Only the order matters — headers are full question
+sentences and are never matched on.
 
 ### `benchmark.csv`
 `domain_code, port, score` — one row per domain × port (10 × 4 = 40 rows),
@@ -240,6 +261,40 @@ The aggregation is re-run with every indicator weighted 1/50 (the
 change in the overall index, and the **Spearman rank correlation** between the
 two domain rankings (Kendall's τ-b as a tie-robust companion).
 
+### Survey ingest (`src/survey_ingest.py`)
+A Google Forms export cannot be read straight into the analysis: the first
+column is a Forms `Timestamp`, the second is the consent question (Q0), the
+headers are full question sentences that change whenever the form is edited, and
+the answers are category labels rather than codes. The ingest therefore:
+
+1. **checks consent first** — any row not answering "Yes" is reported (row
+   number, timestamp, the value found) and dropped, and the invariant that every
+   retained row consented is re-checked afterwards;
+2. drops `Timestamp` and Q0, then maps the remaining columns to `q1`…`q15`
+   **by position**, failing loudly if there are not exactly 15;
+3. assigns `respondent_id` as `AGT-001`, `AGT-002`, … in **ascending timestamp
+   order** (not file order);
+4. recodes the categorical items using the explicit tables at the top of the
+   module — matching is tolerant of case, whitespace, curly apostrophes and
+   en-dashes (Google Sheets substitutes all three) but **not** of different
+   wording: an unrecognised label raises an error naming the offending value
+   rather than silently becoming missing;
+5. range-checks every coded item, reports missing counts per column, and writes
+   `survey.csv` to `data/raw/` — never to `synthetic/data/`.
+
+`"Don't know"` on the exercise-frequency item becomes missing, because it is not
+a point on the Never…Often scale. `"Unsure"` on the awareness items scores 1,
+because a respondent who does not know whether a plan exists is evidence about
+how well that plan is communicated.
+
+### Survey analysis (`src/survey_analysis.py`)
+n, mean, SD and median for the seven Likert items; frequency tables with the
+original option labels restored for the coded items; response counts for the
+free-text items. **Cronbach's alpha** over the seven Likert confidence items
+(`q1, q3, q4, q5, q8, q9, q10`) using sample variances and complete cases, with
+the corrected item-total correlations and alpha-if-item-deleted that identify a
+misbehaving item.
+
 ---
 
 ## Outputs
@@ -257,11 +312,13 @@ greyscale-legible (colour is never the only channel):
 | `fig4_implementation_gap` | Diverging bars: work-as-imagined vs work-as-done |
 | `fig5_delphi_consensus` | Median relevance + IQR whiskers, consensus flagged |
 | `fig6_sensitivity_scatter` | AHP vs equal-weight domain scores, Spearman ρ annotated |
+| `fig7_survey_likert` | Stacked distribution of the five-point survey Likert items |
 
-**Tables** — 16 CSVs plus `posrri_results.xlsx`, a single workbook with every
+**Tables** — 20 CSVs plus `posrri_results.xlsx`, a single workbook with every
 table as a sheet (summary, structure, Delphi per-indicator and per-round,
 retained/dropped lists, AHP consistency report, pillar/domain/indicator
-weights, indicator/domain/pillar scores, sensitivity, benchmark).
+weights, indicator/domain/pillar scores, sensitivity, benchmark, and the survey
+descriptives, frequency tables, free-text counts and alpha item statistics).
 
 ---
 
@@ -273,14 +330,24 @@ python tests/validate_pipeline.py --quick   # skip figure rendering
 ```
 
 Runs the whole pipeline on synthetic data and prints a PASS/FAIL checklist over
-15 checks: hierarchy shape, data completeness, generator determinism, CR
+21 checks: hierarchy shape, data completeness, generator determinism, CR
 reported for every matrix and all below 0.10, global weights summing to 1.0,
 Delphi consensus flags and I-CVI for all 50 indicators, the consensus rule
 matching the protocol exactly, Cohen's kappa returning a finite value (and
 `nan` rather than an exception in the degenerate case), POSRRI and all domain
 scores within 0–100, exact 0/100 endpoints for the 0–3 rubric, Spearman ρ in
-range, all six figures present, and every table exporting. Exits non-zero on
-any failure.
+range, all six figures present, and every table exporting.
+
+The survey checks cover the ingest specifically: that it produces exactly the
+`respondent_id, q1 … q15` schema and that the committed `survey.csv` is
+byte-equivalent to what the ingest produces (so the demonstration file cannot
+have been written by anything else), that respondent ids are unique, sequential
+and follow ascending timestamp order, that every coded value lies inside its
+allowed set with the Likert items within 1-5 and the text items still text, that
+Cronbach's alpha returns a finite value (and is exactly 1.0 on seven identical
+items), and that Figure 7 exists.
+
+Exits non-zero on any failure.
 
 ---
 
@@ -295,8 +362,14 @@ any failure.
   `config.py`.
 * **One structure.** The hierarchy is defined once in `src/structure.py` and
   cannot drift between stages.
+* **One survey coding.** The recode tables live only in
+  `src/survey_ingest.py`, and the committed synthetic `survey.csv` is produced
+  by running that same ingest over the synthetic raw export — so the
+  demonstration data cannot drift from the coding rules, and the validator
+  asserts the two agree.
 * **`data/raw/` is git-ignored.** Real participant data — expert identities,
-  interview-derived scores, survey responses — must never be committed. In
+  interview-derived scores, survey responses — must never be committed. The
+  survey ingest writes there by default for exactly this reason. In
   Colab, keep it in Drive. The committed synthetic dataset exists precisely so
   that the pipeline can be demonstrated and reviewed without exposing anyone's
   data.

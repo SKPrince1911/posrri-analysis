@@ -1,0 +1,4 @@
+item,label,n_answered,n_blank,pct_answered,n_distinct,most_common
+q11,Greatest barrier (free text),43,7,86.0,6,Unclear lines of authority (10); Equipment is not maintained (8); No dedicated budget (8)
+q12,Most valuable single change (free text),44,6,88.0,6,Run a full-scale annual exercise (11); Appoint a permanent on-scene commander (10); Publish the plan to all terminals (8)
+q15,Organisation (free text),41,9,82.0,6,Terminal operator (10); Fisheries department (8); Coast guard (8)

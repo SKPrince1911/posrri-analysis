@@ -67,6 +67,20 @@ SCORE_RAMP = ["#EEF4F9", "#A8C9E2", "#3D8DC4", "#08508A"]
 #: figure can never disagree with the scoring definition used to produce it.
 SCORE_LABELS = {k: config.rubric_label(k) for k in sorted(config.SCORE_RUBRIC)}
 
+#: Five-point Likert ramp. The scale has a true neutral midpoint, so this is a
+#: diverging scheme -- two hues either side of a neutral grey -- not a rainbow
+#: and not a single-hue sequential ramp.
+#:
+#: The two arms are deliberately asymmetric in lightness. A symmetric ramp put
+#: the extremes within 0.003 relative luminance of each other, which makes
+#: "not at all" and "completely" the same shade of grey in black-and-white
+#: print; these steps hold the arms monotone in lightness (0.045 -> 0.283 ->
+#: 0.624 -> 0.468 -> 0.217) and keep the ends 0.172 apart.
+LIKERT_RAMP = ["#6B2600", "#D9773C", "#CFCFCF", "#8FBBE0", "#3C86BE"]
+
+#: Per-segment text colour, chosen for >= 4.4:1 contrast against its fill.
+LIKERT_TEXT = ["#FFFFFF", "#1A1A1A", "#1A1A1A", "#1A1A1A", "#1A1A1A"]
+
 #: Diverging scheme for the documentation-vs-practice gap: two hues, neutral
 #: midpoint, no rainbow.
 GAP_POSITIVE = OI["vermillion"]     # paperwork ahead of practice
@@ -697,6 +711,104 @@ def fig_sensitivity_scatter(sens_domains: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
+# (g) Survey: Likert distributions
+# ---------------------------------------------------------------------------
+
+def fig_survey_likert(survey: pd.DataFrame,
+                      figure_dir: "Path | str" = config.FIGURE_DIR,
+                      stem: str = "fig7_survey_likert") -> List[Path]:
+    """Horizontal stacked bars of the five-point Likert distributions.
+
+    One bar per Likert item, each spanning 0-100% of valid responses, split
+    into the five response levels in fixed order. Items are sorted by the
+    share answering 4-5, which is the quantity a reader compares across items.
+
+    Colour is a diverging ramp about the neutral midpoint (see
+    ``LIKERT_RAMP``), but identity never rests on colour: segment order along
+    the bar is itself the ordinal encoding, every segment of 6% or more prints
+    its percentage, and the margin reports % low, % high and the item mean.
+    """
+    from src.survey_ingest import ITEM_LABELS, LIKERT_ITEMS, LIKERT_LABELS
+
+    apply_style()
+    levels = [1, 2, 3, 4, 5]
+
+    rows = []
+    for item in LIKERT_ITEMS:
+        values = pd.to_numeric(survey[item], errors="coerce").dropna().astype(int)
+        n = int(values.size)
+        if n == 0:
+            continue
+        counts = values.value_counts().reindex(levels, fill_value=0)
+        pct = 100.0 * counts / n
+        rows.append({
+            "item": item,
+            "label": ITEM_LABELS.get(item, item),
+            "n": n,
+            "mean": float(values.mean()),
+            "pct_low": float(pct[1] + pct[2]),
+            "pct_high": float(pct[4] + pct[5]),
+            **{f"pct_{k}": float(pct[k]) for k in levels},
+        })
+    if not rows:
+        raise ValueError("no Likert responses to plot")
+
+    df = pd.DataFrame(rows).sort_values("pct_high", ascending=True).reset_index(drop=True)
+    y = np.arange(len(df))
+
+    fig, ax = plt.subplots(figsize=(8.2, 0.46 * len(df) + 2.0))
+    ax.set_axisbelow(True)
+    ax.xaxis.grid(True, color=GRID, linewidth=0.6)
+
+    left = np.zeros(len(df))
+    for idx, level in enumerate(levels):
+        widths = df[f"pct_{level}"].to_numpy(dtype=float)
+        ax.barh(y, widths, left=left, height=0.68, color=LIKERT_RAMP[idx],
+                edgecolor="white", linewidth=1.2,
+                label=f"{level}  {LIKERT_LABELS[level]}")
+        for yi, (w, l0) in enumerate(zip(widths, left)):
+            if w >= 6.0:                      # below this a label cannot fit
+                ax.text(l0 + w / 2, yi, f"{w:.0f}", ha="center", va="center",
+                        fontsize=7.5, fontweight="bold", color=LIKERT_TEXT[idx])
+        left = left + widths
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(df["label"])
+    ax.set_xlim(0, 100)
+    ax.set_xticks([0, 20, 40, 60, 80, 100])
+    ax.set_xlabel("Share of valid responses (%)")
+    ax.set_title("Stakeholder survey: distribution of five-point Likert responses")
+
+    # Margin table: the summary numbers a reader would otherwise have to
+    # reconstruct by eye from the segment widths.
+    x_low, x_high, x_mean, x_n = 108.0, 119.0, 130.0, 139.0
+    for yi, row in df.iterrows():
+        ax.text(x_low, yi, f"{row['pct_low']:.0f}", ha="right", va="center",
+                fontsize=8, color=LIKERT_RAMP[0], fontweight="bold")
+        ax.text(x_high, yi, f"{row['pct_high']:.0f}", ha="right", va="center",
+                fontsize=8, color=LIKERT_RAMP[4], fontweight="bold")
+        ax.text(x_mean, yi, f"{row['mean']:.2f}", ha="right", va="center",
+                fontsize=8, color=INK)
+        ax.text(x_n, yi, f"{int(row['n'])}", ha="right", va="center",
+                fontsize=8, color=INK_MUTED)
+    head = y.max() + 0.62
+    for x, text, colour in ((x_low, "% 1-2", LIKERT_RAMP[0]),
+                            (x_high, "% 4-5", LIKERT_RAMP[4]),
+                            (x_mean, "mean", INK_MUTED),
+                            (x_n, "n", INK_MUTED)):
+        ax.text(x, head, text, ha="right", va="center", fontsize=7.5,
+                color=colour, style="italic")
+
+    ax.set_xlim(0, x_n + 2)
+    ax.set_ylim(-0.65, head + 0.45)
+    ax.spines["bottom"].set_bounds(0, 100)
+
+    ax.legend(loc="upper center", bbox_to_anchor=(0.40, -0.13), ncol=5,
+              handlelength=1.3, columnspacing=1.2, fontsize=7.5)
+    return save_figure(fig, stem, figure_dir)
+
+
+# ---------------------------------------------------------------------------
 # Convenience driver
 # ---------------------------------------------------------------------------
 
@@ -709,6 +821,10 @@ FIGURE_STEMS: Sequence[str] = (
     "fig5_delphi_consensus",
     "fig6_sensitivity_scatter",
 )
+
+#: The survey figure is kept separate from the six core manuscript figures
+#: because it requires survey data, which the index itself does not.
+SURVEY_FIGURE_STEM = "fig7_survey_likert"
 
 
 def make_all_figures(scoring_result: dict,

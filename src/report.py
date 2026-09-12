@@ -36,7 +36,8 @@ EXCEL_FILENAME = "posrri_results.xlsx"
 def summary_frame(delphi_result: dict,
                   ahp_result: dict,
                   scoring_result: dict,
-                  sensitivity_result: dict) -> pd.DataFrame:
+                  sensitivity_result: dict,
+                  survey_result: "dict | None" = None) -> pd.DataFrame:
     """Headline numbers as a tidy metric/value/notes table."""
     d = delphi_result["summary"]
     a = ahp_result["summary"]
@@ -75,6 +76,18 @@ def summary_frame(delphi_result: dict,
         ("Spearman rho (AHP vs equal)", round(s["spearman_rho"], 4),
          f"p = {s['spearman_p']:.3g}; {s['n_rank_changes']} domains change rank"),
     ]
+    if survey_result is not None:
+        sv = survey_result["summary"]
+        rows += [
+            ("Survey respondents", sv["n_respondents"],
+             f"{sv['n_likert_items']} Likert, {sv['n_categorical_items']} coded, "
+             f"{sv['n_text_items']} free-text items"),
+            ("Cronbach's alpha (7-item scale)", round(sv["cronbach_alpha"], 4),
+             f"{sv['alpha_interpretation']}; {sv['alpha_n_respondents']} complete "
+             f"cases, {sv['alpha_n_excluded']} excluded"),
+            ("Mean Likert score", round(sv["mean_likert_overall"], 3),
+             f"highest {sv['highest_rated_item']}, lowest {sv['lowest_rated_item']}"),
+        ]
     return pd.DataFrame(rows, columns=["metric", "value", "notes"])
 
 
@@ -82,12 +95,20 @@ def collect_tables(delphi_result: dict,
                    ahp_result: dict,
                    scoring_result: dict,
                    sensitivity_result: dict,
-                   benchmark_0_100: "pd.DataFrame | None" = None
+                   benchmark_0_100: "pd.DataFrame | None" = None,
+                   survey_result: "dict | None" = None
                    ) -> "OrderedDict[str, pd.DataFrame]":
-    """Gather every result frame in reporting order."""
+    """Gather every result frame in reporting order.
+
+    ``survey_result`` is the output of :func:`src.survey_analysis.run_survey_analysis`;
+    pass it to append the survey descriptives, frequency tables and the
+    Cronbach's alpha item statistics. Omit it and the survey sheets are simply
+    absent, so the index tables can be exported without survey data.
+    """
     tables: "OrderedDict[str, pd.DataFrame]" = OrderedDict()
     tables["00_summary"] = summary_frame(
-        delphi_result, ahp_result, scoring_result, sensitivity_result)
+        delphi_result, ahp_result, scoring_result, sensitivity_result,
+        survey_result=survey_result)
     tables["01_index_structure"] = st.structure_frame()
     tables["02_delphi_per_indicator"] = delphi_result["per_indicator"]
     tables["03_delphi_by_round"] = delphi_result["long"]
@@ -104,6 +125,11 @@ def collect_tables(delphi_result: dict,
     tables["14_sensitivity_pillars"] = sensitivity_result["pillars"]
     if benchmark_0_100 is not None:
         tables["15_benchmark_0_100"] = benchmark_0_100.reset_index()
+    if survey_result is not None:
+        tables["16_survey_likert"] = survey_result["likert"]
+        tables["17_survey_frequencies"] = survey_result["frequencies"]
+        tables["18_survey_text"] = survey_result["text"]
+        tables["19_survey_alpha_items"] = survey_result["alpha"]["item_statistics"]
     return tables
 
 

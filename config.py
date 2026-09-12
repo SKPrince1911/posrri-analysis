@@ -40,6 +40,7 @@ DATA_FILES = {
     "ahp": "ahp_pairwise.csv",
     "scores": "scores.csv",
     "survey": "survey.csv",
+    "survey_export": "survey_export.csv",   # raw Google Forms export
     "benchmark": "benchmark.csv",
 }
 
