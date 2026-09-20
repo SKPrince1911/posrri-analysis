@@ -53,8 +53,9 @@ from src.delphi import cohens_kappa, run_delphi  # noqa: E402
 from src.report import collect_tables, export_tables  # noqa: E402
 from src.scoring import benchmark_matrix, score_index  # noqa: E402
 from src.survey_analysis import cronbach_alpha, run_survey_analysis  # noqa: E402
-from src.survey_ingest import (ALLOWED_VALUES, ITEMS, LIKERT_ITEMS,  # noqa: E402
-                               RECODE, TEXT_ITEMS, load_survey_export,
+from src.survey_ingest import (AGREEMENT, ALLOWED_VALUES, ITEMS,  # noqa: E402
+                               LIKERT_ITEMS, RECODE, TEXT_ITEMS,
+                               _coerce_likert, load_survey_export,
                                read_survey)
 from src.sensitivity import run_sensitivity  # noqa: E402
 
@@ -521,6 +522,73 @@ def main(quick: bool = False) -> int:
                 f"{len(TEXT_ITEMS)} text items left as text")
 
     cl.check("Survey coded values within allowed sets", _survey_codes)
+
+    def _likert_formats() -> str:
+        """The loader must accept agreement labels and bare numbers alike."""
+        assert AGREEMENT == {"Strongly disagree": 1, "Disagree": 2,
+                             "Neither agree nor disagree": 3, "Agree": 4,
+                             "Strongly agree": 5}, (
+            f"the agreement mapping has drifted: {AGREEMENT}")
+
+        labels = list(AGREEMENT)
+        # Exact labels, and the same labels with case and padding mangled.
+        exact = _coerce_likert(pd.Series(labels), "q1")
+        assert exact.tolist() == [1, 2, 3, 4, 5], (
+            f"exact agreement labels coded as {exact.tolist()}")
+        messy = _coerce_likert(
+            pd.Series([f"  {t.upper()} " for t in labels]), "q1")
+        assert messy.tolist() == [1, 2, 3, 4, 5], (
+            f"case/whitespace variants coded as {messy.tolist()}")
+        # "Disagree" must not be absorbed by "Strongly disagree".
+        pair = _coerce_likert(pd.Series(["Disagree", "Strongly disagree"]), "q1")
+        assert pair.tolist() == [2, 1], f"substring collision: {pair.tolist()}"
+
+        # Legacy numeric responses pass through unchanged, in any form.
+        for label, series in (("str", pd.Series(["1", "3", "5"])),
+                              ("int", pd.Series([1, 3, 5])),
+                              ("float", pd.Series([1.0, 3.0, 5.0]))):
+            got = _coerce_likert(series, "q1")
+            assert got.tolist() == [1, 3, 5], f"numeric {label}: {got.tolist()}"
+
+        # Both representations mixed inside one column, plus blanks.
+        tally: dict = {}
+        mixed = _coerce_likert(
+            pd.Series(["Agree", "2", " strongly agree ", 4, None, ""]),
+            "q1", tally)
+        assert mixed.tolist()[:4] == [4, 2, 5, 4], f"mixed column: {mixed.tolist()}"
+        assert mixed.isna().sum() == 2, "blanks did not become missing"
+        assert tally == {"text": 2, "numeric": 2}, f"tally wrong: {tally}"
+
+        # Unrecognised values must raise and name the offender.
+        for bad in ("Somewhat agree", "Strongly Agreed", "n/a", "3.5"):
+            try:
+                _coerce_likert(pd.Series(["Agree", bad]), "q1")
+            except ValueError as exc:
+                assert bad in str(exc), (
+                    f"error for {bad!r} does not name the offending value: {exc}")
+            else:
+                raise AssertionError(f"{bad!r} was accepted on a Likert item")
+        try:
+            _coerce_likert(pd.Series(["7"]), "q1")
+        except ValueError as exc:
+            assert "7" in str(exc), f"out-of-range error does not name 7: {exc}"
+        else:
+            raise AssertionError("numeric 7 was accepted on a 1-5 item")
+
+        # The committed export must exercise both paths, or this is untested.
+        raw = pd.read_csv(export_path, dtype=str)
+        cols = list(raw.columns)
+        positions = [ITEMS.index(i) + 2 for i in LIKERT_ITEMS]
+        values = pd.concat([raw[cols[p]] for p in positions]).dropna()
+        numeric = values[values.str.strip().str.fullmatch(r"\d+")]
+        text = values[~values.str.strip().str.fullmatch(r"\d+")]
+        assert len(numeric) > 0 and len(text) > 0, (
+            f"the synthetic export must contain both representations to test "
+            f"them; found {len(numeric)} numeric and {len(text)} text")
+        return (f"{len(text)} agreement labels + {len(numeric)} numeric in the "
+                f"export; {text.nunique()} surface variants all resolved")
+
+    cl.check("Likert accepts agreement labels and numbers", _likert_formats)
 
     def _survey_analysis() -> str:
         assert loaded, "survey data failed to load (see the schema check above)"

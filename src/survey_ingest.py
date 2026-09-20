@@ -10,8 +10,11 @@ read straight into the analysis:
 2. the headers are the full question sentences, and they change whenever anyone
    edits the wording of a question in the form -- so columns must be matched
    **by position**, never by header text;
-3. answers are category labels ("Unsure", "Don't know", "6-10 years"), not the
-   numeric codes the analysis needs.
+3. answers are category labels ("Unsure", "Don't know", "6-10 years",
+   "Strongly agree"), not the numeric codes the analysis needs -- and the same
+   item may carry labels for some respondents and bare numbers for others, if
+   the question was switched from a linear scale to multiple choice partway
+   through collection.
 
 ``load_survey_export`` handles all three and writes the project's
 ``survey.csv`` schema (``respondent_id, q1 ... q15``).
@@ -84,15 +87,15 @@ ITEM_LABELS: Dict[str, str] = {
     "q15": "Organisation (free text)",
 }
 
-#: Response labels for the shared five-point scale. The items are worded
-#: "how confident / how clear / how adequate / how effective", so the anchors
-#: are intensity levels rather than agreement levels.
+#: Response labels for the shared five-point scale, used in tables and in the
+#: Figure 7 legend. These are the anchors of the agreement scale the items are
+#: now asked on; see AGREEMENT below for the labels the form exports.
 LIKERT_LABELS = {
-    1: "Not at all",
-    2: "A little",
-    3: "Moderately",
-    4: "Considerably",
-    5: "Completely",
+    1: "Strongly disagree",
+    2: "Disagree",
+    3: "Neither agree nor disagree",
+    4: "Agree",
+    5: "Strongly agree",
 }
 
 # ---------------------------------------------------------------------------
@@ -113,6 +116,21 @@ YES_UNSURE_NO = {"Yes": 2, "Unsure": 1, "No": 0}
 #: the Never..Often ordinal scale, so it becomes missing.
 FREQUENCY = {"Never": 1, "Rarely": 2, "Sometimes": 3, "Often": 4,
              "Don't know": pd.NA}
+
+#: Five-point agreement scale. The seven Likert items are Google Forms
+#: multiple-choice questions exporting these labels as text.
+#:
+#: Earlier waves of the same items were collected as a Forms *linear scale*,
+#: which exports the integer 1-5 directly, so :func:`_coerce_likert` accepts
+#: either representation per value. That keeps a single loader working across a
+#: form that was edited mid-collection, without a separate migration step.
+AGREEMENT = {
+    "Strongly disagree": 1,
+    "Disagree": 2,
+    "Neither agree nor disagree": 3,
+    "Agree": 4,
+    "Strongly agree": 5,
+}
 
 #: Binary training item.
 YES_NO = {"Yes": 1, "No": 0}
@@ -237,28 +255,75 @@ def _recode_categorical(series: pd.Series, item: str) -> pd.Series:
     return pd.Series(out, index=series.index, dtype="Int64")
 
 
-def _coerce_likert(series: pd.Series, item: str) -> pd.Series:
-    """Coerce a Likert column to Int64 and range-check it to 1-5."""
-    numeric = pd.to_numeric(series, errors="coerce")
-    unparsed = series[numeric.isna() & (series.map(_norm) != "")]
-    if len(unparsed):
-        raise ValueError(
-            f"{item}: non-numeric value(s) on a 1-5 Likert item: "
-            f"{sorted(set(unparsed.astype(str)))[:5]!r}"
-        )
-    rounded = numeric.round()
-    if not np.allclose(numeric.dropna(), rounded.dropna()):
-        raise ValueError(f"{item}: non-integer Likert value(s) present")
+def _coerce_likert(series: pd.Series, item: str,
+                   tally: "Dict[str, int] | None" = None) -> pd.Series:
+    """Coerce a Likert column to Int64 on 1-5, accepting text or numbers.
 
-    out = rounded.astype("Int64")
-    bad = out.dropna()
+    Each value is resolved independently, so a column may mix both
+    representations -- which is exactly what happens to a form edited partway
+    through data collection:
+
+    * an agreement label ("Agree", " strongly agree ") is matched against
+      :data:`AGREEMENT`, tolerant of surrounding whitespace and of case;
+    * a value that is already numeric (1-5, from an earlier Forms linear
+      scale) is accepted as it stands;
+    * a blank becomes missing;
+    * anything else raises, naming the offending value rather than quietly
+      coercing it to missing, because a silently dropped response is a
+      silently biased result.
+
+    ``tally``, if given, is updated with how many values arrived in each
+    representation, so the ingest summary can report the mix.
+    """
+    lookup = _normalised_map(AGREEMENT)
+    out: List[object] = []
+    offenders: List[str] = []
+    n_text = n_numeric = 0
+
+    for raw in series:
+        key = _norm(raw)
+        if key == "":
+            out.append(pd.NA)
+            continue
+        if key in lookup:                       # agreement label
+            out.append(lookup[key])
+            n_text += 1
+            continue
+        try:                                    # legacy linear-scale number
+            number = float(str(raw).strip())
+        except ValueError:
+            offenders.append(str(raw))
+            out.append(pd.NA)
+            continue
+        if not number.is_integer():
+            offenders.append(str(raw))
+            out.append(pd.NA)
+            continue
+        out.append(int(number))
+        n_numeric += 1
+
+    if offenders:
+        unique = sorted(set(offenders))
+        raise ValueError(
+            f"{item}: unrecognised value(s) {unique!r} on a five-point Likert "
+            f"item. Expected one of {list(AGREEMENT)!r} (case and surrounding "
+            f"whitespace are ignored), or an integer 1-5 from an earlier "
+            f"linear-scale response."
+        )
+
+    coded = pd.Series(out, index=series.index, dtype="Int64")
+    bad = coded.dropna()
     bad = bad[~bad.isin(ALLOWED_VALUES[item])]
     if len(bad):
         raise ValueError(
             f"{item}: {len(bad)} Likert value(s) outside 1-5: "
             f"{sorted(set(bad.tolist()))!r}"
         )
-    return out
+
+    if tally is not None:
+        tally["text"] = tally.get("text", 0) + n_text
+        tally["numeric"] = tally.get("numeric", 0) + n_numeric
+    return coded
 
 
 # ---------------------------------------------------------------------------
@@ -372,12 +437,13 @@ def load_survey_export(path: "str | Path",
         )
 
     out = pd.DataFrame({"respondent_id": respondent_id})
+    likert_tally: Dict[str, int] = {}
     for position, item in enumerate(ITEMS):
         source = item_frame.iloc[:, position]
         if item in RECODE:
             out[item] = _recode_categorical(source, item).to_numpy()
         elif item in LIKERT_ITEMS:
-            out[item] = _coerce_likert(source, item).to_numpy()
+            out[item] = _coerce_likert(source, item, likert_tally).to_numpy()
         else:                                       # free text, kept verbatim
             out[item] = source.astype("string").str.strip().to_numpy()
 
@@ -418,6 +484,10 @@ def load_survey_export(path: "str | Path",
             print(f"      row {row['row']}: consent = {row['consent']!r} "
                   f"({row['timestamp']})")
         print(f"  Respondents retained        {len(out)}")
+        n_text = likert_tally.get("text", 0)
+        n_numeric = likert_tally.get("numeric", 0)
+        print(f"  Likert answers              {n_text + n_numeric} "
+              f"({n_text} agreement labels, {n_numeric} numeric)")
         if len(out):
             print(f"  respondent_id range         {out['respondent_id'].iloc[0]} .. "
                   f"{out['respondent_id'].iloc[-1]}")

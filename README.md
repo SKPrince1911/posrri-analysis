@@ -204,7 +204,8 @@ index uses.
 ### `survey.csv`
 `respondent_id, q1 … q15` — one row per consenting respondent. Normally
 **produced by `src/survey_ingest.py`**, not typed by hand. `q1, q3, q4, q5, q8,
-q9, q10` are five-point Likert (1–5); `q2, q6` are Yes/Unsure/No coded 2/1/0;
+q9, q10` are the five-point agreement scale coded 1–5 (Strongly disagree →
+Strongly agree); `q2, q6` are Yes/Unsure/No coded 2/1/0;
 `q7` is Never/Rarely/Sometimes/Often coded 1–4 with "Don't know" missing; `q13`
 is experience bands coded 1–4; `q14` is Yes/No coded 1/0; `q11, q12, q15` are
 free text. Full table in `data/templates/README.md`.
@@ -279,8 +280,15 @@ the answers are category labels rather than codes. The ingest therefore:
    en-dashes (Google Sheets substitutes all three) but **not** of different
    wording: an unrecognised label raises an error naming the offending value
    rather than silently becoming missing;
-5. range-checks every coded item, reports missing counts per column, and writes
-   `survey.csv` to `data/raw/` — never to `synthetic/data/`.
+5. resolves the seven Likert items from **either** representation, per value:
+   the agreement labels the multiple-choice questions now export
+   (`Strongly disagree` … `Strongly agree` → 1–5), or a bare 1–5 integer from
+   responses collected before those items were switched from a Forms linear
+   scale. A single column may mix both, so a form edited partway through
+   collection needs no migration step;
+6. range-checks every coded item, reports missing counts per column (and the
+   split between label and numeric Likert answers), and writes `survey.csv` to
+   `data/raw/` — never to `synthetic/data/`.
 
 `"Don't know"` on the exercise-frequency item becomes missing, because it is not
 a point on the Never…Often scale. `"Unsure"` on the awareness items scores 1,
@@ -330,7 +338,7 @@ python tests/validate_pipeline.py --quick   # skip figure rendering
 ```
 
 Runs the whole pipeline on synthetic data and prints a PASS/FAIL checklist over
-21 checks: hierarchy shape, data completeness, generator determinism, CR
+22 checks: hierarchy shape, data completeness, generator determinism, CR
 reported for every matrix and all below 0.10, global weights summing to 1.0,
 Delphi consensus flags and I-CVI for all 50 indicators, the consensus rule
 matching the protocol exactly, Cohen's kappa returning a finite value (and
@@ -345,7 +353,13 @@ have been written by anything else), that respondent ids are unique, sequential
 and follow ascending timestamp order, that every coded value lies inside its
 allowed set with the Likert items within 1-5 and the text items still text, that
 Cronbach's alpha returns a finite value (and is exactly 1.0 on seven identical
-items), and that Figure 7 exists.
+items), and that Figure 7 exists. A dedicated check covers the dual-format
+Likert loader: exact and case/whitespace-mangled agreement labels, numeric
+passthrough as string, int and float, both representations mixed in one column,
+`"Disagree"` not being absorbed by `"Strongly disagree"`, and an error naming
+the offending value for each unrecognised input — plus an assertion that the
+committed export actually contains both representations, so the paths are
+exercised rather than merely reachable.
 
 Exits non-zero on any failure.
 

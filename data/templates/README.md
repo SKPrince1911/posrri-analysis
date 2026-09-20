@@ -54,7 +54,7 @@ writes this file to `data/raw/`.
 | column | type | values |
 |---|---|---|
 | `respondent_id` | str | `AGT-001`, `AGT-002`, … assigned in ascending timestamp order |
-| `q1, q3, q4, q5, q8, q9, q10` | int | 1-5 five-point Likert (intensity) |
+| `q1, q3, q4, q5, q8, q9, q10` | int | 1-5 agreement scale: Strongly disagree = 1 … Strongly agree = 5. The raw export may carry either the text label or, for responses collected before the items were switched to multiple choice, a bare 1-5 integer; the ingest accepts both. |
 | `q2, q6` | int | Yes = 2, Unsure = 1, No = 0 |
 | `q7` | int | Never = 1, Rarely = 2, Sometimes = 3, Often = 4; "Don't know" → blank |
 | `q13` | int | < 2 years = 1, 2-5 = 2, 6-10 = 3, > 10 = 4 |
@@ -74,6 +74,12 @@ edited — the ingest maps items **by position**:
 | 1 | `Timestamp` (added by Forms; required, and used for the respondent ordering) |
 | 2 | consent question (Q0); rows not answering "Yes" are reported and dropped |
 | 3-17 | the 15 items, in questionnaire order, as category labels or 1-5 integers |
+
+The seven Likert items are Google Forms multiple-choice questions exporting
+`Strongly disagree` / `Disagree` / `Neither agree nor disagree` / `Agree` /
+`Strongly agree`. Matching ignores case and surrounding whitespace. Earlier
+responses collected on a Forms *linear scale* export a bare integer instead,
+and are accepted as-is, so one loader handles a form edited mid-collection.
 
 A synthetic example is committed at `synthetic/data/survey_export.csv`.
 

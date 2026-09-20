@@ -45,7 +45,11 @@ if str(_ROOT) not in sys.path:
 import config  # noqa: E402
 from src import structure as st  # noqa: E402
 from src.ahp import consistency_ratio, priority_weights  # noqa: E402
-from src.survey_ingest import load_survey_export  # noqa: E402
+from src.survey_ingest import AGREEMENT, load_survey_export  # noqa: E402
+
+#: code -> agreement label, inverted from the ingest's own mapping so the
+#: synthetic export can never disagree with what the ingest accepts.
+AGREEMENT_LABELS = {code: label for label, code in AGREEMENT.items()}
 
 # ---------------------------------------------------------------------------
 # Panel sizes
@@ -402,6 +406,17 @@ def generate_survey_export(rng: np.random.Generator) -> pd.DataFrame:
     minutes = rng.permutation(minutes)
     base = np.datetime64("2026-03-02T08:00:00")
 
+    # The seven Likert items were switched from a Forms linear scale to
+    # multiple choice partway through collection, so early submissions carry
+    # bare numbers and later ones carry agreement labels. The cut is taken
+    # from the timestamps, and the surface variants below are chosen by row
+    # index -- neither draws from the generator, so the underlying values (and
+    # therefore every downstream result) are unaffected by this formatting.
+    switch_at = float(np.quantile(minutes, 0.30))
+    _VARIANTS = [lambda t: t, lambda t: t.upper(), lambda t: f"  {t} ",
+                 lambda t: t.lower(), lambda t: t, lambda t: f"{t}  ",
+                 lambda t: t.capitalize()]
+
     consent = np.array(["Yes"] * n, dtype=object)
     consent[rng.choice(n, size=N_SURVEY_NONCONSENT, replace=False)] = "No"
 
@@ -414,7 +429,12 @@ def generate_survey_export(rng: np.random.Generator) -> pd.DataFrame:
         likert = {}
         for k, item in enumerate(LIKERT_POSITIONS):
             val = 3.0 + 0.62 * theta[i] + item_effect[k] + rng.normal(0, 0.65)
-            likert[item] = str(int(np.clip(round(val), 1, 5)))
+            code = int(np.clip(round(val), 1, 5))
+            if minutes[i] > switch_at:              # multiple choice (text)
+                label = AGREEMENT_LABELS[code]
+                likert[item] = _VARIANTS[(i + k) % len(_VARIANTS)](label)
+            else:                                   # legacy linear scale
+                likert[item] = str(code)
 
         # Awareness tracks confidence, so the coded items are not independent
         # of the Likert block -- as in real data.
