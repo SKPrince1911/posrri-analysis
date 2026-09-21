@@ -67,17 +67,26 @@ LIKERT_ITEMS = ["q1", "q3", "q4", "q5", "q8", "q9", "q10"]
 #: Free-text items, kept verbatim.
 TEXT_ITEMS = ["q11", "q12", "q15"]
 
+#: Prefix for generated survey respondent identifiers, e.g. ``SRV-001``.
+#:
+#: Deliberately NOT ``AGT-``: that prefix is reserved for shipping-agent
+#: interview participants in the field identifier scheme, and reusing it would
+#: make the two datasets ambiguous when they sit side by side. The validator
+#: asserts both that this constant is "SRV" and that no generated id carries
+#: the reserved prefix.
+RESPONDENT_ID_PREFIX = "SRV"
+
 #: Short labels for tables and figure axes. The full question sentences live in
 #: the form itself; these are the abbreviations used for reporting.
 ITEM_LABELS: Dict[str, str] = {
-    "q1": "Plan would work in a Tier 2 spill",
+    "q1": "The plan would work in a Tier 2 spill",
     "q2": "Aware of designated On-Scene Commander",
     "q3": "Own roles and responsibilities are clear",
     "q4": "Response equipment is adequate",
     "q5": "Inter-agency coordination is effective",
     "q6": "Given access to the contingency plan",
     "q7": "Frequency of exercise participation",
-    "q8": "Confidence in the notification chain",
+    "q8": "The notification chain is dependable",
     "q9": "Funding for preparedness is adequate",
     "q10": "Lessons from incidents are acted upon",
     "q11": "Greatest barrier (free text)",
@@ -353,7 +362,8 @@ def load_survey_export(path: "str | Path",
     Returns
     -------
     DataFrame with columns ``respondent_id, q1 ... q15``, one row per
-    consenting respondent, ordered by ascending timestamp.
+    consenting respondent, ordered by ascending timestamp. Identifiers are
+    ``SRV-001``, ``SRV-002``, ... (see :data:`RESPONDENT_ID_PREFIX`).
     """
     path = Path(path)
     if not path.exists():
@@ -424,7 +434,8 @@ def load_survey_export(path: "str | Path",
     order = np.argsort(kept_timestamps.to_numpy(), kind="stable")
     frame = frame.iloc[order].reset_index(drop=True)
     ordered_timestamps = kept_timestamps.to_numpy()[order]
-    respondent_id = [f"AGT-{k:03d}" for k in range(1, len(frame) + 1)]
+    respondent_id = [f"{RESPONDENT_ID_PREFIX}-{k:03d}"
+                     for k in range(1, len(frame) + 1)]
 
     # ---- items, BY POSITION ------------------------------------------------
     item_frame = frame.drop(columns=[columns[ts_idx], columns[consent_idx]])

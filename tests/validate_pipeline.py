@@ -54,8 +54,8 @@ from src.report import collect_tables, export_tables  # noqa: E402
 from src.scoring import benchmark_matrix, score_index  # noqa: E402
 from src.survey_analysis import cronbach_alpha, run_survey_analysis  # noqa: E402
 from src.survey_ingest import (AGREEMENT, ALLOWED_VALUES, ITEMS,  # noqa: E402
-                               LIKERT_ITEMS, RECODE, TEXT_ITEMS,
-                               _coerce_likert, load_survey_export,
+                               LIKERT_ITEMS, RECODE, RESPONDENT_ID_PREFIX,
+                               TEXT_ITEMS, _coerce_likert, load_survey_export,
                                read_survey)
 from src.sensitivity import run_sensitivity  # noqa: E402
 
@@ -465,6 +465,11 @@ def main(quick: bool = False) -> int:
 
     def _survey_ids() -> str:
         assert loaded, "survey data failed to load (see the schema check above)"
+        # Pin the value, not just the format: deriving everything from the
+        # constant would let a silent change to it pass unnoticed.
+        assert RESPONDENT_ID_PREFIX == "SRV", (
+            f"respondent id prefix is {RESPONDENT_ID_PREFIX!r}, expected 'SRV' "
+            f"('AGT' is reserved for shipping-agent interviews)")
         # Both the ingest output AND the committed file: checking only the
         # freshly ingested frame would be vacuous, since the ingest generates
         # the ids itself and cannot produce a duplicate.
@@ -474,10 +479,20 @@ def main(quick: bool = False) -> int:
             dupes = ids[ids.duplicated()].tolist()
             assert not dupes, f"{source}: duplicate respondent_id {dupes[:5]}"
             assert ids.notna().all(), f"{source}: missing respondent_id"
-            expected = [f"AGT-{k:03d}" for k in range(1, len(ids) + 1)]
+            # Checked before the exact-sequence assertion below, which would
+            # otherwise fire first and report a generic mismatch: a collision
+            # with the reserved interview prefix deserves to say so.
+            reserved = [i for i in ids if str(i).upper().startswith("AGT-")]
+            assert not reserved, (
+                f"{source}: {len(reserved)} respondent_id(s) use the reserved "
+                f"AGT- shipping-agent interview prefix, e.g. {reserved[:3]}; "
+                f"survey respondents must use {RESPONDENT_ID_PREFIX}-")
+            expected = [f"{RESPONDENT_ID_PREFIX}-{k:03d}"
+                        for k in range(1, len(ids) + 1)]
             assert ids.tolist() == expected, (
-                f"{source}: respondent_id is not AGT-001..AGT-{len(ids):03d} in "
-                f"order; first mismatch at index "
+                f"{source}: respondent_id is not {RESPONDENT_ID_PREFIX}-001.."
+                f"{RESPONDENT_ID_PREFIX}-{len(ids):03d} in order; first "
+                f"mismatch at index "
                 f"{next(i for i, (a, b) in enumerate(zip(ids, expected)) if a != b)}")
         ids = loaded["ingested"]["respondent_id"]
 
@@ -491,7 +506,9 @@ def main(quick: bool = False) -> int:
         assert not stamps.is_monotonic_increasing, (
             "the synthetic export is already timestamp-sorted, so the sort is "
             "never exercised")
-        return f"{len(ids)} unique ids, AGT-001..AGT-{len(ids):03d}, timestamp-ordered"
+        return (f"{len(ids)} unique ids, {RESPONDENT_ID_PREFIX}-001.."
+                f"{RESPONDENT_ID_PREFIX}-{len(ids):03d}, timestamp-ordered, "
+                f"no AGT- collision")
 
     cl.check("Survey respondent_ids are unique and ordered", _survey_ids)
 

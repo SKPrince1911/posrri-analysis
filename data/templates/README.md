@@ -53,7 +53,7 @@ writes this file to `data/raw/`.
 
 | column | type | values |
 |---|---|---|
-| `respondent_id` | str | `AGT-001`, `AGT-002`, … assigned in ascending timestamp order |
+| `respondent_id` | str | `SRV-001`, `SRV-002`, … assigned in ascending timestamp order. `SRV-` marks survey respondents; `AGT-` is reserved for shipping-agent interview participants and is never used here. |
 | `q1, q3, q4, q5, q8, q9, q10` | int | 1-5 agreement scale: Strongly disagree = 1 … Strongly agree = 5. The raw export may carry either the text label or, for responses collected before the items were switched to multiple choice, a bare 1-5 integer; the ingest accepts both. |
 | `q2, q6` | int | Yes = 2, Unsure = 1, No = 0 |
 | `q7` | int | Never = 1, Rarely = 2, Sometimes = 3, Often = 4; "Don't know" → blank |

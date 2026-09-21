@@ -273,8 +273,11 @@ the answers are category labels rather than codes. The ingest therefore:
    retained row consented is re-checked afterwards;
 2. drops `Timestamp` and Q0, then maps the remaining columns to `q1`…`q15`
    **by position**, failing loudly if there are not exactly 15;
-3. assigns `respondent_id` as `AGT-001`, `AGT-002`, … in **ascending timestamp
-   order** (not file order);
+3. assigns `respondent_id` as `SRV-001`, `SRV-002`, … in **ascending timestamp
+   order** (not file order). The prefix is set once by
+   `survey_ingest.RESPONDENT_ID_PREFIX`; `AGT-` is deliberately avoided because
+   it is reserved for shipping-agent interview participants in the field
+   identifier scheme, and the validator asserts no survey id collides with it;
 4. recodes the categorical items using the explicit tables at the top of the
    module — matching is tolerant of case, whitespace, curly apostrophes and
    en-dashes (Google Sheets substitutes all three) but **not** of different

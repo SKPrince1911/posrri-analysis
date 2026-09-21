@@ -324,30 +324,34 @@ def generate_scores(rng: np.random.Generator) -> pd.DataFrame:
 #: Question wording as it would appear in the Google Form. The ingest matches
 #: items BY POSITION, so these strings exist only to make the synthetic export
 #: realistic -- editing any of them must not change the ingested result.
+#: The seven agreement items are worded as declarative statements, because
+#: that is what an agree/disagree response scale requires: a respondent agrees
+#: or disagrees with a proposition, not with a question. The remaining items
+#: keep their interrogative form, since they are answered on Yes/Unsure/No,
+#: frequency, experience-band or free-text scales rather than on agreement.
 SURVEY_HEADERS = [
     "Timestamp",
     "Do you consent to take part in this study? Responses are anonymised and "
     "used only for academic research.",
-    "How confident are you that the port oil spill contingency plan would work "
-    "in a real Tier 2 spill?",                                         # q1  Likert
+    "I am confident the port oil spill contingency plan would work in a real "
+    "Tier 2 spill.",                                                   # q1  agreement
     "Are you aware of a designated On-Scene Commander for oil spill response "
     "at this port?",                                                   # q2  Yes/Unsure/No
-    "How clear are your own roles and responsibilities during a spill response?",
-                                                                       # q3  Likert
-    "How adequate do you consider the response equipment currently available?",
-                                                                       # q4  Likert
-    "How effective is coordination between agencies during a spill response?",
-                                                                       # q5  Likert
+    "My own roles and responsibilities during a spill response are clear to me.",
+                                                                       # q3  agreement
+    "The oil spill response equipment currently available at this port is "
+    "adequate.",                                                       # q4  agreement
+    "Coordination between agencies during a spill response is effective.",
+                                                                       # q5  agreement
     "Have you been given access to the port oil spill contingency plan?",
                                                                        # q6  Yes/Unsure/No
     "How often does your organisation take part in oil spill response exercises?",
                                                                        # q7  frequency
-    "How confident are you in the notification and reporting chain for a spill?",
-                                                                       # q8  Likert
-    "How adequate is the funding available for oil spill preparedness?",
-                                                                       # q9  Likert
-    "How confident are you that lessons from incidents and exercises are acted "
-    "upon?",                                                           # q10 Likert
+    "I am confident in the notification and reporting chain for a reported "
+    "spill.",                                                          # q8  agreement
+    "The funding available for oil spill preparedness at this port is adequate.",
+                                                                       # q9  agreement
+    "Lessons from incidents and exercises are acted upon.",            # q10 agreement
     "In your view, what is the single greatest barrier to oil spill "
     "preparedness at this port?",                                      # q11 text
     "What one change would most improve oil spill readiness at this port?",
