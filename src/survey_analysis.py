@@ -37,15 +37,20 @@ if str(_ROOT) not in sys.path:
 
 import config  # noqa: E402
 from src import viz  # noqa: E402
-from src.survey_ingest import (ALLOWED_VALUES, ITEM_LABELS, ITEMS,  # noqa: E402
-                               LIKERT_ITEMS, RECODE, TEXT_ITEMS,
-                               category_labels, read_survey)
+from src.survey_ingest import (ALLOWED_VALUES, ITEM_LABELS,  # noqa: E402
+                               LIKERT_ITEMS, ORG_GROUPS, ORG_OTHER,
+                               ORG_SHORT_LABELS, OUTPUT_COLUMNS, RECODE,
+                               TEXT_ITEMS, category_labels,
+                               organisation_audit, read_survey)
 
 #: The internal-consistency scale: the seven Likert confidence/adequacy items.
 CONFIDENCE_SCALE = list(LIKERT_ITEMS)
 
 #: Coded items that are ordinal categories rather than the five-point Likert.
-CATEGORICAL_ITEMS = [item for item in ITEMS if item in RECODE]
+CATEGORICAL_ITEMS = [item for item in OUTPUT_COLUMNS if item in RECODE]
+
+#: Reported columns (everything but the identifier).
+REPORTED_COLUMNS = [c for c in OUTPUT_COLUMNS if c != "respondent_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +193,32 @@ def frequency_tables(survey: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def organisation_frequencies(survey: pd.DataFrame) -> pd.DataFrame:
+    """Respondents per organisation group, in the form's own category order.
+
+    Percentages are of respondents who answered the question; the blank count
+    is carried on every row so the denominator is never ambiguous.
+    """
+    groups = survey["q12_group"]
+    n_valid = int(groups.notna().sum())
+    n_missing = int(groups.isna().sum())
+    counts = groups.value_counts()
+
+    rows = []
+    for group in ORG_GROUPS:
+        count = int(counts.get(group, 0))
+        rows.append({
+            "q12_group": group,
+            "group_short": ORG_SHORT_LABELS.get(group, group),
+            "count": count,
+            "pct_of_valid": 100.0 * count / n_valid if n_valid else float("nan"),
+            "n_valid": n_valid,
+            "n_missing": n_missing,
+            "is_residual": group == ORG_OTHER,
+        })
+    return pd.DataFrame(rows)
+
+
 def text_response_summary(survey: pd.DataFrame) -> pd.DataFrame:
     """Response counts and the most common answers for the free-text items."""
     rows = []
@@ -226,16 +257,19 @@ def run_survey_analysis(survey: "pd.DataFrame | str | Path",
     likert = likert_descriptives(survey)
     frequencies = frequency_tables(survey)
     text = text_response_summary(survey)
+    organisations = organisation_frequencies(survey)
+    org_audit = organisation_audit(survey)
     alpha = cronbach_alpha(survey[CONFIDENCE_SCALE])
 
     figures: List[Path] = []
     if make_figure:
-        figures = viz.fig_survey_likert(
-            survey, figure_dir if figure_dir is not None else config.FIGURE_DIR)
+        target = figure_dir if figure_dir is not None else config.FIGURE_DIR
+        figures = list(viz.fig_survey_likert(survey, target))
+        figures += list(viz.fig_survey_by_group(survey, target))
 
     summary = {
         "n_respondents": int(len(survey)),
-        "n_items": len(ITEMS),
+        "n_items": len(REPORTED_COLUMNS),
         "n_likert_items": len(LIKERT_ITEMS),
         "n_categorical_items": len(CATEGORICAL_ITEMS),
         "n_text_items": len(TEXT_ITEMS),
@@ -246,14 +280,22 @@ def run_survey_analysis(survey: "pd.DataFrame | str | Path",
         "mean_likert_overall": float(likert["mean"].mean()),
         "highest_rated_item": str(likert.loc[likert["mean"].idxmax(), "item"]),
         "lowest_rated_item": str(likert.loc[likert["mean"].idxmin(), "item"]),
-        "total_missing": int(sum(survey[i].isna().sum() for i in ITEMS
-                                 if i not in TEXT_ITEMS)),
+        "total_missing": int(sum(survey[c].isna().sum()
+                                 for c in REPORTED_COLUMNS
+                                 if c not in TEXT_ITEMS)),
+        "n_org_groups": int(survey["q12_group"].nunique(dropna=True)),
+        "n_org_other": int((survey["q12_group"] == ORG_OTHER).sum()),
+        "n_org_missing": int(survey["q12_group"].isna().sum()),
+        "largest_org_group": (str(survey["q12_group"].value_counts().idxmax())
+                              if survey["q12_group"].notna().any() else "n/a"),
     }
 
     return {
         "likert": likert,
         "frequencies": frequencies,
         "text": text,
+        "organisations": organisations,
+        "org_audit": org_audit,
         "alpha": alpha,
         "figure": figures,
         "summary": summary,
@@ -296,6 +338,16 @@ if __name__ == "__main__":
     print(res["frequencies"][["item", "category", "count", "pct_of_valid",
                               "n_missing"]]
           .round(1).to_string(index=False))
+
+    print("\nOrganisation type (q12): respondents per group")
+    print("-" * 78)
+    print(res["organisations"][["group_short", "q12_group", "count",
+                                "pct_of_valid", "n_missing"]]
+          .round(1).to_string(index=False))
+
+    print("\nOrganisation type (q12): every distinct raw answer and its group")
+    print("-" * 96)
+    print(res["org_audit"].to_string(index=False))
 
     print("\nFree-text items")
     print("-" * 78)

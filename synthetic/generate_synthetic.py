@@ -45,11 +45,17 @@ if str(_ROOT) not in sys.path:
 import config  # noqa: E402
 from src import structure as st  # noqa: E402
 from src.ahp import consistency_ratio, priority_weights  # noqa: E402
-from src.survey_ingest import AGREEMENT, load_survey_export  # noqa: E402
+from src.survey_ingest import (AGREEMENT, ORG_CATEGORIES,  # noqa: E402
+                               load_survey_export)
 
 #: code -> agreement label, inverted from the ingest's own mapping so the
 #: synthetic export can never disagree with what the ingest accepts.
-AGREEMENT_LABELS = {code: label for label, code in AGREEMENT.items()}
+#: The live form's wording for each point: the FIRST label listed for each
+#: code in AGREEMENT, so the midpoint renders as "Neutral" rather than the
+#: accepted alias.
+AGREEMENT_LABELS = {}
+for _label, _code in AGREEMENT.items():
+    AGREEMENT_LABELS.setdefault(int(_code), _label)
 
 # ---------------------------------------------------------------------------
 # Panel sizes
@@ -332,7 +338,7 @@ def generate_scores(rng: np.random.Generator) -> pd.DataFrame:
 SURVEY_HEADERS = [
     "Timestamp",
     "Do you consent to take part in this study? Responses are anonymised and "
-    "used only for academic research.",
+    "used only for academic research.",                                # Q0 consent
     "I am confident the port oil spill contingency plan would work in a real "
     "Tier 2 spill.",                                                   # q1  agreement
     "Are you aware of a designated On-Scene Commander for oil spill response "
@@ -354,13 +360,12 @@ SURVEY_HEADERS = [
     "Lessons from incidents and exercises are acted upon.",            # q10 agreement
     "In your view, what is the single greatest barrier to oil spill "
     "preparedness at this port?",                                      # q11 text
-    "What one change would most improve oil spill readiness at this port?",
-                                                                       # q12 text
+    "Which of the following best describes your organisation?",        # q12 org type
     "How many years have you worked in port operations, shipping or "
     "environmental regulation?",                                       # q13 bands
     "Have you received formal oil spill response training (e.g. IMO OPRC Level "
     "1, 2 or 3)?",                                                     # q14 Yes/No
-    "Which organisation or agency do you work for? (optional)",        # q15 text
+    "Any further comments on oil spill preparedness at this port?",    # q15 text
 ]
 
 _BARRIERS = [
@@ -368,14 +373,20 @@ _BARRIERS = [
     "Unclear lines of authority", "Too few trained staff",
     "Plan is out of date", "Agencies do not exercise together", "",
 ]
-_IMPROVEMENTS = [
-    "Fund a standing response unit", "Run a full-scale annual exercise",
-    "Appoint a permanent on-scene commander", "Replace ageing booms",
-    "Publish the plan to all terminals", "Set up an incident database", "",
+#: Free-text answers typed into the form's "Other" box on q12. These must NOT
+#: match any listed category, so that the fall-through to "Other" is exercised
+#: by the committed data rather than merely reachable.
+_ORG_OTHER_TYPED = [
+    "Freelance marine surveyor",
+    "University researcher",
+    "Customs broker",
+    "Fisheries cooperative",
 ]
-_ORGANISATIONS = [
-    "Port authority", "Department of Environment", "Coast guard",
-    "Terminal operator", "Shipping agent", "Fisheries department", "",
+
+_FURTHER_COMMENTS = [
+    "Exercises need to involve the terminals", "More boom stock is essential",
+    "Training budget has not increased in years", "Plan should be public",
+    "Response times must be logged", "", "",
 ]
 
 
@@ -421,8 +432,9 @@ def generate_survey_export(rng: np.random.Generator) -> pd.DataFrame:
                  lambda t: t.lower(), lambda t: t, lambda t: f"{t}  ",
                  lambda t: t.capitalize()]
 
-    consent = np.array(["Yes"] * n, dtype=object)
-    consent[rng.choice(n, size=N_SURVEY_NONCONSENT, replace=False)] = "No"
+    consent = np.array(["Yes, I consent"] * n, dtype=object)
+    consent[rng.choice(n, size=N_SURVEY_NONCONSENT, replace=False)] = \
+        "No, I do not consent"
 
     rows = []
     for i in range(n):
@@ -453,10 +465,26 @@ def generate_survey_export(rng: np.random.Generator) -> pd.DataFrame:
             frequency = str(rng.choice(["Never", "Rarely", "Sometimes", "Often"],
                                        p=[0.30, 0.34, 0.26, 0.10]))
 
-        band = str(rng.choice(["Less than 2 years", "2-5 years", "6-10 years",
-                               "More than 10 years"], p=[0.16, 0.32, 0.30, 0.22]))
-        if band == "2-5 years" and rng.random() < 0.35:
-            band = "2\u20135 years"                  # en-dash variant
+        # Organisation type: mostly listed options, a few typed into "Other",
+        # and one left blank so the missing-vs-Other distinction is exercised.
+        org_roll = rng.random()
+        if org_roll < 0.12:
+            organisation = _ORG_OTHER_TYPED[
+                int(rng.integers(len(_ORG_OTHER_TYPED)))]
+        elif org_roll < 0.18:
+            organisation = ""
+        else:
+            organisation = str(rng.choice(
+                ORG_CATEGORIES,
+                # "Master or ship's officer" is deliberately rare, so the
+                # figure's n < 3 pooling rule is exercised by this dataset.
+                p=[0.26, 0.10, 0.18, 0.18, 0.14, 0.04, 0.10]))
+            if rng.random() < 0.18:                 # casing/padding drift
+                organisation = f"  {organisation.upper()} "
+
+        band = str(rng.choice(["Less than 5 years", "5 to 10 years",
+                               "11 to 20 years", "More than 20 years"],
+                              p=[0.16, 0.32, 0.30, 0.22]))
 
         rows.append({
             SURVEY_HEADERS[0]: ts,
@@ -472,10 +500,11 @@ def generate_survey_export(rng: np.random.Generator) -> pd.DataFrame:
             SURVEY_HEADERS[10]: likert["q9"],
             SURVEY_HEADERS[11]: likert["q10"],
             SURVEY_HEADERS[12]: _BARRIERS[int(rng.integers(len(_BARRIERS)))],
-            SURVEY_HEADERS[13]: _IMPROVEMENTS[int(rng.integers(len(_IMPROVEMENTS)))],
+            SURVEY_HEADERS[13]: organisation,
             SURVEY_HEADERS[14]: band,
             SURVEY_HEADERS[15]: "Yes" if theta[i] > -0.15 else "No",
-            SURVEY_HEADERS[16]: _ORGANISATIONS[int(rng.integers(len(_ORGANISATIONS)))],
+            SURVEY_HEADERS[16]:
+                _FURTHER_COMMENTS[int(rng.integers(len(_FURTHER_COMMENTS)))],
         })
 
     return pd.DataFrame(rows, columns=SURVEY_HEADERS)

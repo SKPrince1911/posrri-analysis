@@ -54,12 +54,14 @@ writes this file to `data/raw/`.
 | column | type | values |
 |---|---|---|
 | `respondent_id` | str | `SRV-001`, `SRV-002`, … assigned in ascending timestamp order. `SRV-` marks survey respondents; `AGT-` is reserved for shipping-agent interview participants and is never used here. |
-| `q1, q3, q4, q5, q8, q9, q10` | int | 1-5 agreement scale: Strongly disagree = 1 … Strongly agree = 5. The raw export may carry either the text label or, for responses collected before the items were switched to multiple choice, a bare 1-5 integer; the ingest accepts both. |
+| `q1, q3, q4, q5, q8, q9, q10` | int | 1-5 agreement scale: Strongly disagree = 1, Disagree = 2, Neutral = 3, Agree = 4, Strongly agree = 5 (`Neither agree nor disagree` accepted as an alias for 3). The raw export may carry either the text label or, for responses collected before the items were switched to multiple choice, a bare 1-5 integer; the ingest accepts both. |
 | `q2, q6` | int | Yes = 2, Unsure = 1, No = 0 |
 | `q7` | int | Never = 1, Rarely = 2, Sometimes = 3, Often = 4; "Don't know" → blank |
-| `q13` | int | < 2 years = 1, 2-5 = 2, 6-10 = 3, > 10 = 4 |
+| `q13` | int | Less than 5 years = 1, 5 to 10 years = 2, 11 to 20 years = 3, More than 20 years = 4 (the same labels without "years" are accepted) |
 | `q14` | int | Yes = 1, No = 0 |
-| `q11, q12, q15` | str | free text, kept verbatim |
+| `q11, q15` | str | free text, kept verbatim |
+| `q12_raw` | str | organisation type exactly as answered, including a typed "Other" |
+| `q12_group` | str | one of the 7 listed categories or `Other`; blank raw answer stays missing |
 
 The coding tables are defined once, at the top of `src/survey_ingest.py`, and
 nothing else in the pipeline recodes survey answers.
@@ -72,12 +74,12 @@ edited — the ingest maps items **by position**:
 | position | content |
 |---|---|
 | 1 | `Timestamp` (added by Forms; required, and used for the respondent ordering) |
-| 2 | consent question (Q0); rows not answering "Yes" are reported and dropped |
+| 2 | consent question (Q0), answered `Yes, I consent`; rows not consenting are reported and dropped |
 | 3-17 | the 15 items, in questionnaire order, as category labels or 1-5 integers |
 
-The seven Likert items are Google Forms multiple-choice questions exporting
-`Strongly disagree` / `Disagree` / `Neither agree nor disagree` / `Agree` /
-`Strongly agree`. Matching ignores case and surrounding whitespace. Earlier
+The seven agreement items are Google Forms multiple-choice questions exporting
+`Strongly disagree` / `Disagree` / `Neutral` / `Agree` / `Strongly agree`
+(`Neither agree nor disagree` is accepted as an alias for the midpoint). Matching ignores case and surrounding whitespace. Earlier
 responses collected on a Forms *linear scale* export a bare integer instead,
 and are accepted as-is, so one loader handles a form edited mid-collection.
 

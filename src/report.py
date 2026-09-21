@@ -87,6 +87,9 @@ def summary_frame(delphi_result: dict,
              f"cases, {sv['alpha_n_excluded']} excluded"),
             ("Mean Likert score", round(sv["mean_likert_overall"], 3),
              f"highest {sv['highest_rated_item']}, lowest {sv['lowest_rated_item']}"),
+            ("Organisation groups represented", sv["n_org_groups"],
+             f"{sv['n_org_other']} free-text -> Other, "
+             f"{sv['n_org_missing']} left blank"),
         ]
     return pd.DataFrame(rows, columns=["metric", "value", "notes"])
 
@@ -130,6 +133,10 @@ def collect_tables(delphi_result: dict,
         tables["17_survey_frequencies"] = survey_result["frequencies"]
         tables["18_survey_text"] = survey_result["text"]
         tables["19_survey_alpha_items"] = survey_result["alpha"]["item_statistics"]
+        tables["20_survey_org_groups"] = survey_result["organisations"]
+        # The free-text coding audit: every distinct q12 answer and the group
+        # it was assigned, so the coding can be checked by hand.
+        tables["21_survey_org_audit"] = survey_result["org_audit"]
     return tables
 
 

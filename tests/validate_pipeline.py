@@ -53,10 +53,13 @@ from src.delphi import cohens_kappa, run_delphi  # noqa: E402
 from src.report import collect_tables, export_tables  # noqa: E402
 from src.scoring import benchmark_matrix, score_index  # noqa: E402
 from src.survey_analysis import cronbach_alpha, run_survey_analysis  # noqa: E402
-from src.survey_ingest import (AGREEMENT, ALLOWED_VALUES, ITEMS,  # noqa: E402
-                               LIKERT_ITEMS, RECODE, RESPONDENT_ID_PREFIX,
-                               TEXT_ITEMS, _coerce_likert, load_survey_export,
-                               read_survey)
+from src.survey_ingest import (AGREEMENT, ALLOWED_VALUES,  # noqa: E402
+                               EXPERIENCE_BANDS, ITEMS, LIKERT_ITEMS,
+                               ORG_CATEGORIES, ORG_GROUPS, ORG_OTHER,
+                               OUTPUT_COLUMNS, RECODE, RESPONDENT_ID_PREFIX,
+                               CONSENT_YES, LIKERT_LABELS, TEXT_ITEMS,
+                               _coerce_likert, _norm, load_survey_export,
+                               organisation_group, read_survey)
 from src.sensitivity import run_sensitivity  # noqa: E402
 
 TOL = 1e-9
@@ -438,12 +441,17 @@ def main(quick: bool = False) -> int:
         survey = read_survey(data_dir / "survey.csv")
         loaded["ingested"], loaded["survey"] = ingested, survey
 
-        expected = ["respondent_id"] + ITEMS
-        assert list(ingested.columns) == expected, (
-            f"ingest produced columns {list(ingested.columns)}, expected {expected}")
-        assert list(survey.columns) == expected, (
-            f"survey.csv columns {list(survey.columns)}, expected {expected}")
-        assert len(ITEMS) == 15, f"expected 15 items, got {len(ITEMS)}"
+        assert list(ingested.columns) == OUTPUT_COLUMNS, (
+            f"ingest produced columns {list(ingested.columns)}, "
+            f"expected {OUTPUT_COLUMNS}")
+        assert list(survey.columns) == OUTPUT_COLUMNS, (
+            f"survey.csv columns {list(survey.columns)}, "
+            f"expected {OUTPUT_COLUMNS}")
+        assert len(ITEMS) == 15, f"expected 15 source items, got {len(ITEMS)}"
+        # q12 is the one item that expands into two output columns.
+        assert "q12" not in OUTPUT_COLUMNS, "q12 should expand to q12_raw/q12_group"
+        for column in ("q12_raw", "q12_group"):
+            assert column in OUTPUT_COLUMNS, f"{column} missing from the schema"
 
         # The committed survey.csv must be exactly what the ingest produces:
         # if they diverge, the demonstration file was written by something
@@ -497,10 +505,17 @@ def main(quick: bool = False) -> int:
         ids = loaded["ingested"]["respondent_id"]
 
         # IDs must follow ascending timestamp order, not file order.
+        # Reuse the ingest's own consent vocabulary and normaliser rather than
+        # a simplified copy: a hardcoded "yes" here silently stopped matching
+        # when the form's consent option became "Yes, I consent".
         raw = pd.read_csv(export_path, dtype=str)
         stamps = pd.to_datetime(raw.iloc[:, 0], errors="coerce", format="mixed")
-        consent = raw.iloc[:, 1].astype(str).str.strip().str.casefold()
-        kept = stamps[consent.eq("yes")].sort_values()
+        yes_keys = {_norm(v) for v in CONSENT_YES}
+        consented = raw.iloc[:, 1].map(_norm).isin(yes_keys)
+        assert consented.any(), (
+            f"no row in the export matches a consent value from "
+            f"{sorted(CONSENT_YES)!r}")
+        kept = stamps[consented].sort_values()
         assert kept.is_monotonic_increasing and len(kept) == len(ids), (
             "respondent_id ordering does not follow ascending timestamp")
         assert not stamps.is_monotonic_increasing, (
@@ -511,6 +526,27 @@ def main(quick: bool = False) -> int:
                 f"no AGT- collision")
 
     cl.check("Survey respondent_ids are unique and ordered", _survey_ids)
+
+    def _experience_bands() -> str:
+        """The rebuilt bands, their no-"years" aliases, and old bands refused."""
+        for label, code in (("Less than 5 years", 1), ("5 to 10 years", 2),
+                            ("11 to 20 years", 3), ("More than 20 years", 4)):
+            assert EXPERIENCE_BANDS.get(label) == code, (
+                f"q13 band {label!r} maps to "
+                f"{EXPERIENCE_BANDS.get(label)!r}, expected {code}")
+            alias = label.replace(" years", "")
+            assert EXPERIENCE_BANDS.get(alias) == code, (
+                f"q13 alias {alias!r} missing or wrong")
+        # The pre-rebuild bands cut at 2/5/10 rather than 5/10/20, so silently
+        # accepting them would merge two different measurements.
+        for old_band in ("Less than 2 years", "2-5 years", "6-10 years",
+                         "More than 10 years"):
+            assert old_band not in EXPERIENCE_BANDS, (
+                f"{old_band!r} is a pre-rebuild band with different cut points "
+                f"and must not be silently accepted")
+        return "4 bands + no-'years' aliases; pre-rebuild bands refused"
+
+    cl.check("q13 experience bands match the rebuilt form", _experience_bands)
 
     def _survey_codes() -> str:
         assert loaded, "survey data failed to load (see the schema check above)"
@@ -543,11 +579,18 @@ def main(quick: bool = False) -> int:
     def _likert_formats() -> str:
         """The loader must accept agreement labels and bare numbers alike."""
         assert AGREEMENT == {"Strongly disagree": 1, "Disagree": 2,
-                             "Neither agree nor disagree": 3, "Agree": 4,
-                             "Strongly agree": 5}, (
+                             "Neutral": 3, "Agree": 4, "Strongly agree": 5,
+                             "Neither agree nor disagree": 3}, (
             f"the agreement mapping has drifted: {AGREEMENT}")
+        # The rebuilt form's midpoint, and the pre-rebuild alias, are one point.
+        for spelling in ("Neutral", "  NEUTRAL ",
+                         "Neither agree nor disagree", "neither agree nor disagree"):
+            got = _coerce_likert(pd.Series([spelling]), "q1").tolist()
+            assert got == [3], f"{spelling!r} coded as {got}, expected [3]"
+        assert LIKERT_LABELS[3] == "Neutral", (
+            f"the midpoint displays as {LIKERT_LABELS[3]!r}, expected 'Neutral'")
 
-        labels = list(AGREEMENT)
+        labels = [l for l in AGREEMENT if l != "Neither agree nor disagree"]
         # Exact labels, and the same labels with case and padding mangled.
         exact = _coerce_likert(pd.Series(labels), "q1")
         assert exact.tolist() == [1, 2, 3, 4, 5], (
@@ -607,6 +650,55 @@ def main(quick: bool = False) -> int:
 
     cl.check("Likert accepts agreement labels and numbers", _likert_formats)
 
+    def _org_groups() -> str:
+        """Every q12 answer must land in a valid group, or be blank."""
+        assert loaded, "survey data failed to load (see the schema check above)"
+        survey = loaded["survey"]
+
+        assert len(ORG_CATEGORIES) == 7, (
+            f"expected 7 listed organisation categories, got {len(ORG_CATEGORIES)}")
+        assert ORG_GROUPS == ORG_CATEGORIES + [ORG_OTHER], (
+            "ORG_GROUPS must be the listed categories followed by Other")
+
+        # Each listed option maps to itself, whatever its casing or padding.
+        for category in ORG_CATEGORIES:
+            for variant in (category, category.upper(), f"  {category.lower()} "):
+                got = organisation_group(variant)
+                assert got == category, (
+                    f"{variant!r} grouped as {got!r}, expected {category!r}")
+        # Free text falls through to Other; blanks are missing, not Other.
+        for typed in ("Freelance marine surveyor", "Customs broker", "n/a"):
+            assert organisation_group(typed) == ORG_OTHER, (
+                f"{typed!r} should group as {ORG_OTHER!r}")
+        for blank in ("", "   ", None, pd.NA):
+            assert pd.isna(organisation_group(blank)), (
+                f"{blank!r} should be missing, not a group")
+
+        # Every value in the data lands somewhere valid.
+        groups = survey["q12_group"]
+        unexpected = set(groups.dropna()) - set(ORG_GROUPS)
+        assert not unexpected, (
+            f"q12_group contains {sorted(unexpected)!r}, not in {ORG_GROUPS!r}")
+        # And each row's group is exactly what the raw answer implies.
+        for raw, group in zip(survey["q12_raw"], groups):
+            want = organisation_group(raw)
+            same = (pd.isna(want) and pd.isna(group)) or want == group
+            assert same, f"q12_raw {raw!r} grouped as {group!r}, expected {want!r}"
+
+        n_other = int((groups == ORG_OTHER).sum())
+        n_blank = int(groups.isna().sum())
+        assert n_other > 0, (
+            "no free-text 'Other' answers in the synthetic export, so the "
+            "fall-through is never exercised")
+        assert n_blank > 0, (
+            "no blank organisation answers, so the blank-vs-Other distinction "
+            "is never exercised")
+        return (f"{int(groups.notna().sum())} classified into "
+                f"{groups.nunique()} of {len(ORG_GROUPS)} groups "
+                f"({n_other} free-text -> Other, {n_blank} blank -> missing)")
+
+    cl.check("Every q12 answer lands in a valid group", _org_groups)
+
     def _survey_analysis() -> str:
         assert loaded, "survey data failed to load (see the schema check above)"
         survey = loaded["survey"]
@@ -642,16 +734,19 @@ def main(quick: bool = False) -> int:
 
     cl.check("Survey descriptives and Cronbach's alpha", _survey_analysis)
 
-    def _survey_figure() -> str:
+    def _survey_figures() -> str:
         missing = []
-        for ext in config.FIGURE_FORMATS:
-            path = figure_dir / f"{viz.SURVEY_FIGURE_STEM}.{ext}"
-            if not path.exists() or path.stat().st_size < 1024:
-                missing.append(path.name)
-        assert not missing, f"survey figure missing or too small: {missing}"
-        return f"{viz.SURVEY_FIGURE_STEM} in {len(config.FIGURE_FORMATS)} formats"
+        for stem in viz.SURVEY_FIGURE_STEMS:
+            for ext in config.FIGURE_FORMATS:
+                path = figure_dir / f"{stem}.{ext}"
+                if not path.exists() or path.stat().st_size < 1024:
+                    missing.append(path.name)
+        assert not missing, f"survey figure(s) missing or too small: {missing}"
+        assert len(viz.SURVEY_FIGURE_STEMS) == 2, "expected 2 survey figures"
+        return (f"{', '.join(viz.SURVEY_FIGURE_STEMS)} in "
+                f"{len(config.FIGURE_FORMATS)} formats each")
 
-    cl.check("Survey Likert figure exists", _survey_figure)
+    cl.check("Survey figures exist", _survey_figures)
 
     # --------------------------------------------------------------- 11 ----
     def _tables() -> str:

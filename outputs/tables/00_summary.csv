@@ -16,5 +16,6 @@ Weakest domain,D5,Resources & Equipment
 Mean implementation gap,0.32,"documentary minus field score, 0-3 points"
 Spearman rho (AHP vs equal),0.9483,p = 2.93e-05; 5 domains change rank
 Survey respondents,50,"7 Likert, 5 coded, 3 free-text items"
-Cronbach's alpha (7-item scale),0.8152,"good; 50 complete cases, 0 excluded"
-Mean Likert score,3.02,"highest q4, lowest q9"
+Cronbach's alpha (7-item scale),0.812,"good; 50 complete cases, 0 excluded"
+Mean Likert score,2.971,"highest q4, lowest q10"
+Organisation groups represented,7,"4 free-text -> Other, 7 left blank"

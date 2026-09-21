@@ -202,13 +202,16 @@ work-as-done (field verification), `final_score` is the adjudicated value the
 index uses.
 
 ### `survey.csv`
-`respondent_id, q1 … q15` — one row per consenting respondent. Normally
-**produced by `src/survey_ingest.py`**, not typed by hand. `q1, q3, q4, q5, q8,
-q9, q10` are the five-point agreement scale coded 1–5 (Strongly disagree →
-Strongly agree); `q2, q6` are Yes/Unsure/No coded 2/1/0;
-`q7` is Never/Rarely/Sometimes/Often coded 1–4 with "Don't know" missing; `q13`
-is experience bands coded 1–4; `q14` is Yes/No coded 1/0; `q11, q12, q15` are
-free text. Full table in `data/templates/README.md`.
+`respondent_id, q1 … q11, q12_raw, q12_group, q13, q14, q15` — one row per
+consenting respondent. Normally **produced by `src/survey_ingest.py`**, not
+typed by hand. `q1, q3, q4, q5, q8, q9, q10` are the five-point agreement scale
+coded 1–5 (Strongly disagree / Disagree / Neutral / Agree / Strongly agree);
+`q2, q6` are Yes/Unsure/No coded 2/1/0; `q7` is Never/Rarely/Sometimes/Often
+coded 1–4 with "Don't know" missing; `q12` expands into `q12_raw` (organisation
+type as answered) and `q12_group` (one of seven listed categories or `Other`);
+`q13` is experience bands coded 1–4 (< 5 / 5–10 / 11–20 / > 20 years); `q14` is
+Yes/No coded 1/0; `q11, q15` are free text. Full table in
+`data/templates/README.md`.
 
 ### `survey_export.csv` (raw Google Forms export)
 The *input* to the ingest: `Timestamp`, the consent question (Q0), then the 15
@@ -283,15 +286,25 @@ the answers are category labels rather than codes. The ingest therefore:
    en-dashes (Google Sheets substitutes all three) but **not** of different
    wording: an unrecognised label raises an error naming the offending value
    rather than silently becoming missing;
-5. resolves the seven Likert items from **either** representation, per value:
-   the agreement labels the multiple-choice questions now export
-   (`Strongly disagree` … `Strongly agree` → 1–5), or a bare 1–5 integer from
-   responses collected before those items were switched from a Forms linear
-   scale. A single column may mix both, so a form edited partway through
-   collection needs no migration step;
-6. range-checks every coded item, reports missing counts per column (and the
-   split between label and numeric Likert answers), and writes `survey.csv` to
-   `data/raw/` — never to `synthetic/data/`.
+5. resolves the seven agreement items from **either** representation, per
+   value: the labels the multiple-choice questions export (`Strongly disagree`,
+   `Disagree`, `Neutral`, `Agree`, `Strongly agree` → 1–5, with
+   `Neither agree nor disagree` accepted as an alias for the midpoint), or a
+   bare 1–5 integer from responses collected before those items were switched
+   from a Forms linear scale. A single column may mix both, so a form edited
+   partway through collection needs no migration step;
+6. splits the organisation question (q12) into `q12_raw` and `q12_group`. The
+   form offers seven organisation types plus a free-text "Other", and Forms
+   exports a typed answer as raw text in the same column. An exact match to a
+   listed option — ignoring case and padding — keeps that option; anything else
+   becomes `Other`; a **blank stays missing** rather than being counted as
+   `Other`, which would invent a group of non-responders. The raw answer is
+   never discarded, and `organisation_audit()` prints every distinct raw value
+   against the group it was assigned, because free-text coding is the one step
+   here a machine cannot fully verify;
+7. range-checks every coded item, reports missing counts per column (and the
+   split between label and numeric agreement answers), and writes `survey.csv`
+   to `data/raw/` — never to `synthetic/data/`.
 
 `"Don't know"` on the exercise-frequency item becomes missing, because it is not
 a point on the Never…Often scale. `"Unsure"` on the awareness items scores 1,
@@ -324,12 +337,14 @@ greyscale-legible (colour is never the only channel):
 | `fig5_delphi_consensus` | Median relevance + IQR whiskers, consensus flagged |
 | `fig6_sensitivity_scatter` | AHP vs equal-weight domain scores, Spearman ρ annotated |
 | `fig7_survey_likert` | Stacked distribution of the five-point survey Likert items |
+| `fig8_survey_by_group` | Mean agreement per item by organisation type, ± 1 SE |
 
-**Tables** — 20 CSVs plus `posrri_results.xlsx`, a single workbook with every
+**Tables** — 22 CSVs plus `posrri_results.xlsx`, a single workbook with every
 table as a sheet (summary, structure, Delphi per-indicator and per-round,
 retained/dropped lists, AHP consistency report, pillar/domain/indicator
 weights, indicator/domain/pillar scores, sensitivity, benchmark, and the survey
-descriptives, frequency tables, free-text counts and alpha item statistics).
+descriptives, frequency tables, free-text counts, alpha item statistics,
+organisation-group counts and the q12 free-text coding audit).
 
 ---
 
@@ -341,7 +356,7 @@ python tests/validate_pipeline.py --quick   # skip figure rendering
 ```
 
 Runs the whole pipeline on synthetic data and prints a PASS/FAIL checklist over
-22 checks: hierarchy shape, data completeness, generator determinism, CR
+24 checks: hierarchy shape, data completeness, generator determinism, CR
 reported for every matrix and all below 0.10, global weights summing to 1.0,
 Delphi consensus flags and I-CVI for all 50 indicators, the consensus rule
 matching the protocol exactly, Cohen's kappa returning a finite value (and
@@ -362,7 +377,13 @@ passthrough as string, int and float, both representations mixed in one column,
 `"Disagree"` not being absorbed by `"Strongly disagree"`, and an error naming
 the offending value for each unrecognised input — plus an assertion that the
 committed export actually contains both representations, so the paths are
-exercised rather than merely reachable.
+exercised rather than merely reachable. Further checks pin the q13 experience
+bands to the rebuilt form's cut points (and assert the pre-rebuild bands, which
+cut at 2/5/10 rather than 5/10/20, are *refused* rather than silently merged),
+and verify that every q12 answer lands in a valid organisation group — each
+listed option matching itself under any casing, free text falling through to
+`Other`, blanks staying missing, and every row's group agreeing with its raw
+answer.
 
 Exits non-zero on any failure.
 

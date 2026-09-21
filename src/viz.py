@@ -87,6 +87,16 @@ GAP_POSITIVE = OI["vermillion"]     # paperwork ahead of practice
 GAP_NEGATIVE = OI["blue"]           # practice ahead of paperwork
 GAP_NEUTRAL = "#BFBFBF"
 
+#: Organisation-group hues, in ORG_CATEGORIES order, with neutral grey held
+#: back for the residual "Other". Validated as a categorical set: all seven in
+#: the lightness band, all above the chroma floor, worst adjacent CVD pair
+#: dE 9.6 (deutan). Marker shapes vary too, so the series stay separable in
+#: greyscale and for the closest colour pair.
+ORG_COLOURS = ["#0072B2", "#D55E00", "#009E73", "#E69F00",
+               "#CC79A7", "#56B4E9", "#8B4513"]
+ORG_OTHER_COLOUR = "#999999"
+ORG_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*"]
+
 INK = "#1A1A1A"
 INK_MUTED = "#5A5A5A"
 GRID = "#D9D9D9"
@@ -809,6 +819,123 @@ def fig_survey_likert(survey: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
+# (h) Survey: agreement by organisation group
+# ---------------------------------------------------------------------------
+
+def fig_survey_by_group(survey: pd.DataFrame,
+                        figure_dir: "Path | str" = config.FIGURE_DIR,
+                        stem: str = "fig8_survey_by_group",
+                        min_group_n: int = 3) -> List[Path]:
+    """Mean agreement on each of the seven items, by organisation group.
+
+    A dot plot rather than grouped bars: the quantity is a mean on a 1-5
+    scale, which does not start at zero, and bars would imply a zero baseline
+    that the scale does not have.
+
+    Groups smaller than ``min_group_n`` are pooled into "Other" -- a mean over
+    one or two respondents is not a group estimate -- and the caption says
+    which. Respondents who left the organisation question blank have no group
+    and are excluded; their count is reported too.
+
+    Each point carries a +/- 1 standard error whisker. With groups this small
+    the differences between them are mostly not resolvable, and drawing the
+    means alone would invite the reader to over-read them.
+    """
+    from src.survey_ingest import (ITEM_LABELS, LIKERT_ITEMS, ORG_CATEGORIES,
+                                   ORG_GROUPS, ORG_OTHER, ORG_SHORT_LABELS)
+
+    apply_style()
+    if "q12_group" not in survey.columns:
+        raise KeyError("survey frame has no q12_group column")
+
+    frame = survey.copy()
+    n_missing_group = int(frame["q12_group"].isna().sum())
+    frame = frame[frame["q12_group"].notna()].copy()
+    if frame.empty:
+        raise ValueError("no respondents carry an organisation group")
+
+    # ---- pool the groups too small to support a mean ----------------------
+    counts = frame["q12_group"].value_counts()
+    pooled = sorted(g for g, n in counts.items()
+                    if g != ORG_OTHER and n < min_group_n)
+    if pooled:
+        frame["q12_group"] = frame["q12_group"].where(
+            ~frame["q12_group"].isin(pooled), ORG_OTHER)
+
+    order = [g for g in ORG_GROUPS if g in set(frame["q12_group"])]
+    group_n = {g: int((frame["q12_group"] == g).sum()) for g in order}
+    colours = {g: (ORG_OTHER_COLOUR if g == ORG_OTHER
+                   else ORG_COLOURS[ORG_CATEGORIES.index(g) % len(ORG_COLOURS)])
+               for g in order}
+    markers = {g: (ORG_MARKERS[-1] if g == ORG_OTHER
+                   else ORG_MARKERS[ORG_CATEGORIES.index(g) % len(ORG_MARKERS)])
+               for g in order}
+
+    # ---- item order: strongest overall agreement at the top ---------------
+    overall = {item: pd.to_numeric(frame[item], errors="coerce").mean()
+               for item in LIKERT_ITEMS}
+    items = sorted(LIKERT_ITEMS, key=lambda i: overall[i])
+    y = np.arange(len(items))
+
+    fig, ax = plt.subplots(figsize=(8.6, 0.78 * len(items) + 2.6))
+    ax.set_axisbelow(True)
+    ax.xaxis.grid(True, color=GRID, linewidth=0.6)
+
+    # Neutral is the meaningful anchor on an agreement scale.
+    ax.axvline(3.0, color=INK_MUTED, linestyle="--", linewidth=1.0, zorder=1)
+
+    spread = 0.62
+    offsets = np.linspace(spread / 2, -spread / 2, len(order))
+    for k, group in enumerate(order):
+        block = frame[frame["q12_group"] == group]
+        means, errs, ys = [], [], []
+        for row, item in enumerate(items):
+            values = pd.to_numeric(block[item], errors="coerce").dropna()
+            if values.empty:
+                continue
+            means.append(float(values.mean()))
+            errs.append(float(values.std(ddof=1) / np.sqrt(len(values)))
+                        if len(values) > 1 else 0.0)
+            ys.append(row + offsets[k])
+        ax.errorbar(means, ys, xerr=errs, fmt="none", ecolor=colours[group],
+                    elinewidth=1.0, alpha=0.55, capsize=0, zorder=2)
+        size = 78 if markers[group] == "*" else 42
+        ax.scatter(means, ys, s=size, marker=markers[group], color=colours[group],
+                   edgecolor="white", linewidth=0.7, zorder=3,
+                   label=f"{ORG_SHORT_LABELS.get(group, group)} "
+                         f"(n = {group_n[group]})")
+
+    for row in range(len(items) - 1):
+        ax.axhline(row + 0.5, color=GRID, linewidth=0.7, zorder=0)
+
+    ax.set_yticks(y)
+    ax.set_yticklabels([ITEM_LABELS.get(i, i) for i in items])
+    ax.set_ylim(-0.6, len(items) - 0.4)
+    ax.set_xlim(1, 5)
+    ax.set_xticks([1, 2, 3, 4, 5])
+    ax.set_xticklabels(["1\nStrongly\ndisagree", "2\nDisagree", "3\nNeutral",
+                        "4\nAgree", "5\nStrongly\nagree"], fontsize=7.5)
+    ax.set_xlabel("Mean agreement (1-5), with +/- 1 standard error")
+    ax.set_title("Agreement on each item by organisation type")
+
+    legend = ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.11),
+                       ncol=min(4, len(order)), handlelength=1.2,
+                       columnspacing=1.6, fontsize=7.5)
+
+    notes = []
+    if pooled:
+        short = ", ".join(ORG_SHORT_LABELS.get(g, g) for g in pooled)
+        notes.append(f"Pooled into Other (n < {min_group_n}): {short}.")
+    if n_missing_group:
+        notes.append(f"{n_missing_group} respondent(s) left the organisation "
+                     f"question blank and are excluded.")
+    if notes:
+        _caption_below(fig, legend, "  ".join(notes), fontsize=7.5,
+                       color=INK_MUTED)
+    return save_figure(fig, stem, figure_dir)
+
+
+# ---------------------------------------------------------------------------
 # Convenience driver
 # ---------------------------------------------------------------------------
 
@@ -822,9 +949,12 @@ FIGURE_STEMS: Sequence[str] = (
     "fig6_sensitivity_scatter",
 )
 
-#: The survey figure is kept separate from the six core manuscript figures
-#: because it requires survey data, which the index itself does not.
-SURVEY_FIGURE_STEM = "fig7_survey_likert"
+#: The survey figures are kept separate from the six core manuscript figures
+#: because they require survey data, which the index itself does not.
+SURVEY_FIGURE_STEMS: Sequence[str] = (
+    "fig7_survey_likert",
+    "fig8_survey_by_group",
+)
 
 
 def make_all_figures(scoring_result: dict,

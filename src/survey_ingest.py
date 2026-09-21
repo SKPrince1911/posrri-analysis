@@ -64,8 +64,22 @@ ITEMS: List[str] = [f"q{k}" for k in range(1, N_ITEMS + 1)]
 #: Five-point Likert confidence/adequacy items, kept as integers 1-5.
 LIKERT_ITEMS = ["q1", "q3", "q4", "q5", "q8", "q9", "q10"]
 
-#: Free-text items, kept verbatim.
-TEXT_ITEMS = ["q11", "q12", "q15"]
+#: Free-text items in the OUTPUT, kept verbatim.
+TEXT_ITEMS = ["q11", "q12_raw", "q15"]
+
+#: Columns of the cleaned survey.csv, in order.
+#:
+#: q12 is the one source item that expands: the form offers seven organisation
+#: types plus a free-text "Other", and Google Forms exports a typed answer as
+#: raw text in the same column. The raw answer is preserved as ``q12_raw`` and
+#: the analysis category as ``q12_group``, because collapsing straight to a
+#: category would discard the only record of what a respondent actually typed.
+OUTPUT_COLUMNS: List[str] = (
+    ["respondent_id"]
+    + [f"q{k}" for k in range(1, 12)]
+    + ["q12_raw", "q12_group"]
+    + ["q13", "q14", "q15"]
+)
 
 #: Prefix for generated survey respondent identifiers, e.g. ``SRV-001``.
 #:
@@ -90,10 +104,16 @@ ITEM_LABELS: Dict[str, str] = {
     "q9": "Funding for preparedness is adequate",
     "q10": "Lessons from incidents are acted upon",
     "q11": "Greatest barrier (free text)",
-    "q12": "Most valuable single change (free text)",
+    "q12": "Organisation type",
+    "q12_raw": "Organisation type (as answered)",
+    "q12_group": "Organisation type (grouped)",
     "q13": "Years of relevant experience",
     "q14": "Formal OPRC training received",
-    "q15": "Organisation (free text)",
+    # NOTE: q12 became the organisation-type question when the form was
+    # rebuilt, so q15 can no longer be "which organisation do you work for".
+    # Labelled as a general closing free-text item; correct this if the live
+    # form asks something more specific.
+    "q15": "Further comments (free text)",
 }
 
 #: Response labels for the shared five-point scale, used in tables and in the
@@ -102,7 +122,7 @@ ITEM_LABELS: Dict[str, str] = {
 LIKERT_LABELS = {
     1: "Strongly disagree",
     2: "Disagree",
-    3: "Neither agree nor disagree",
+    3: "Neutral",
     4: "Agree",
     5: "Strongly agree",
 }
@@ -136,17 +156,69 @@ FREQUENCY = {"Never": 1, "Rarely": 2, "Sometimes": 3, "Often": 4,
 AGREEMENT = {
     "Strongly disagree": 1,
     "Disagree": 2,
-    "Neither agree nor disagree": 3,
+    "Neutral": 3,
     "Agree": 4,
     "Strongly agree": 5,
+    # Alias: the midpoint was worded this way before the form was rebuilt.
+    # Both spellings mean the same point on the scale, so both code to 3.
+    "Neither agree nor disagree": 3,
 }
 
 #: Binary training item.
 YES_NO = {"Yes": 1, "No": 0}
 
-#: Experience bands, ordered.
-EXPERIENCE_BANDS = {"Less than 2 years": 1, "2-5 years": 2,
-                    "6-10 years": 3, "More than 10 years": 4}
+#: Experience bands, ordered. The aliases drop the trailing "years", which is
+#: how the options were worded before the form was rebuilt.
+#:
+#: The pre-rebuild bands ("Less than 2 years", "2-5 years", "6-10 years",
+#: "More than 10 years") are deliberately NOT accepted: they cut the scale at
+#: 2/5/10 rather than 5/10/20, so equating them with these codes would silently
+#: merge two different measurements. Such a value raises instead, leaving the
+#: decision to a person.
+EXPERIENCE_BANDS = {
+    "Less than 5 years": 1,
+    "5 to 10 years": 2,
+    "11 to 20 years": 3,
+    "More than 20 years": 4,
+    "Less than 5": 1,
+    "5 to 10": 2,
+    "11 to 20": 3,
+    "More than 20": 4,
+}
+
+#: Organisation type (q12), in the order the form lists them. The form also
+#: offers a free-text "Other", which Google Forms exports as the typed text in
+#: this same column -- so any value that is not an exact match to one of these
+#: is an "Other" answer.
+ORG_CATEGORIES: List[str] = [
+    "Chattogram Port Authority",
+    "Bangladesh Navy",
+    "Other government agency (Coast Guard, DoE, Department of Shipping, etc.)",
+    "Shipping agent",
+    "Shipping line or vessel operator",
+    "Master or ship's officer",
+    "Terminal, jetty or oil company",
+]
+
+#: Label for anything that is not an exact match to a listed category.
+ORG_OTHER = "Other"
+
+#: The full set of analysis groups, in reporting order.
+ORG_GROUPS: List[str] = ORG_CATEGORIES + [ORG_OTHER]
+
+#: Short labels for tables and figure axes, where the full option text does
+#: not fit.
+ORG_SHORT_LABELS: Dict[str, str] = {
+    "Chattogram Port Authority": "CPA",
+    "Bangladesh Navy": "Navy",
+    "Other government agency (Coast Guard, DoE, Department of Shipping, etc.)":
+        "Govt agency",
+    "Shipping agent": "Shipping agent",
+    "Shipping line or vessel operator": "Shipping line",
+    "Master or ship's officer": "Master/officer",
+    "Terminal, jetty or oil company": "Terminal/oil co.",
+    ORG_OTHER: "Other",
+}
 
 #: item -> mapping. Items absent from this dict are Likert or free text.
 RECODE: Dict[str, Dict[str, object]] = {
@@ -168,8 +240,8 @@ ALLOWED_VALUES: Dict[str, set] = {
 }
 
 #: Consent (Q0). Only "Yes" is retained; "No" rows are reported and dropped.
-CONSENT_YES = {"Yes", "I consent", "I agree"}
-CONSENT_NO = {"No", "I do not consent", "I disagree"}
+CONSENT_YES = {"Yes, I consent", "Yes", "I consent", "I agree"}
+CONSENT_NO = {"No, I do not consent", "No", "I do not consent", "I disagree"}
 
 #: Header patterns used only to find the Timestamp column, which Forms always
 #: names itself. Every analysed item is located by position, not by header.
@@ -189,8 +261,11 @@ def _norm(value) -> str:
     """
     if value is None:
         return ""
-    if isinstance(value, float) and math.isnan(value):
-        return ""
+    try:
+        if pd.isna(value):          # float NaN, pd.NA, NaT -- all "unanswered"
+            return ""
+    except (TypeError, ValueError):  # array-likes are never scalars here
+        pass
     text = str(value).strip()
     text = text.replace("’", "'").replace("‘", "'")
     text = text.replace("–", "-").replace("—", "-")
@@ -262,6 +337,62 @@ def _recode_categorical(series: pd.Series, item: str) -> pd.Series:
             f"add the label to the mapping table in src/survey_ingest.py."
         )
     return pd.Series(out, index=series.index, dtype="Int64")
+
+
+def organisation_group(value) -> object:
+    """Map one raw q12 answer to its analysis group.
+
+    An exact match to a listed category -- ignoring case and surrounding
+    whitespace -- keeps that category. Anything else was typed into the form's
+    free-text "Other" box and becomes :data:`ORG_OTHER`.
+
+    A blank answer returns ``pd.NA`` rather than "Other". "Other" means the
+    respondent named an organisation outside the listed set; a blank means they
+    did not answer. Merging the two would invent a group of non-responders and
+    put them in a figure alongside real ones.
+    """
+    key = _norm(value)
+    if key == "":
+        return pd.NA
+    for category in ORG_CATEGORIES:
+        if _norm(category) == key:
+            return category
+    return ORG_OTHER
+
+
+def organisation_audit(survey: pd.DataFrame) -> pd.DataFrame:
+    """Every distinct raw q12 answer with the group it was assigned.
+
+    Free-text coding is the one step here a machine cannot fully verify, so
+    the mapping is printed for a person to check by hand: each distinct raw
+    value, how many respondents gave it, the group it landed in, and whether
+    that was an exact match to a listed option or fell through to "Other".
+    """
+    if "q12_raw" not in survey.columns:
+        raise KeyError("survey frame has no q12_raw column")
+
+    raw = survey["q12_raw"].astype("string").fillna("")
+    rows = []
+    for value, count in raw.value_counts(dropna=False).items():
+        text = str(value)
+        group = organisation_group(text)
+        blank = group is pd.NA
+        rows.append({
+            "q12_raw": text if text.strip() else "(blank)",
+            "n": int(count),
+            "q12_group": "(missing)" if blank else group,
+            "group_short": ("(missing)" if blank
+                            else ORG_SHORT_LABELS.get(group, str(group))),
+            "match": ("blank -> missing" if blank
+                      else "listed option" if group != ORG_OTHER
+                      else "free text -> Other"),
+        })
+    frame = pd.DataFrame(rows)
+    # Listed options first in form order, then the free-text answers.
+    order = {c: i for i, c in enumerate(ORG_CATEGORIES)}
+    frame["_k"] = frame["q12_group"].map(lambda g: order.get(g, len(order)))
+    return (frame.sort_values(["_k", "n", "q12_raw"], ascending=[True, False, True])
+                 .drop(columns="_k").reset_index(drop=True))
 
 
 def _coerce_likert(series: pd.Series, item: str,
@@ -451,17 +582,26 @@ def load_survey_export(path: "str | Path",
     likert_tally: Dict[str, int] = {}
     for position, item in enumerate(ITEMS):
         source = item_frame.iloc[:, position]
-        if item in RECODE:
+        if item == "q12":
+            # Organisation type: keep what was typed, and derive the group.
+            text = source.astype("string").str.strip()
+            out["q12_raw"] = text.to_numpy()
+            out["q12_group"] = [organisation_group(v) for v in text]
+        elif item in RECODE:
             out[item] = _recode_categorical(source, item).to_numpy()
         elif item in LIKERT_ITEMS:
             out[item] = _coerce_likert(source, item, likert_tally).to_numpy()
         else:                                       # free text, kept verbatim
             out[item] = source.astype("string").str.strip().to_numpy()
 
-    # Restore nullable integer dtypes lost by the round-trip through numpy.
+    # Restore nullable dtypes lost by the round-trip through numpy.
     for item in ITEMS:
         if item in LIKERT_ITEMS or item in RECODE:
             out[item] = out[item].astype("Int64")
+    for item in TEXT_ITEMS + ["q12_group"]:
+        out[item] = out[item].astype("string")
+
+    out = out[OUTPUT_COLUMNS]
 
     # ---- final validation --------------------------------------------------
     for item, allowed in ALLOWED_VALUES.items():
@@ -472,12 +612,19 @@ def load_survey_export(path: "str | Path",
                 f"{item}: coded value(s) {sorted(unexpected)!r} outside the "
                 f"allowed set {sorted(allowed)!r}"
             )
+    bad_groups = set(out["q12_group"].dropna()) - set(ORG_GROUPS)
+    if bad_groups:
+        raise RuntimeError(
+            f"internal error: q12_group produced {sorted(bad_groups)!r}, "
+            f"which is not one of {ORG_GROUPS!r}"
+        )
     if out["respondent_id"].duplicated().any():
         raise RuntimeError("internal error: duplicate respondent_id generated")
 
-    missing = {item: int(out[item].isna().sum()) if item not in TEXT_ITEMS
-               else int((out[item].fillna("") == "").sum())
-               for item in ITEMS}
+    reported = [c for c in OUTPUT_COLUMNS if c != "respondent_id"]
+    missing = {item: (int((out[item].fillna("") == "").sum())
+                      if item in TEXT_ITEMS else int(out[item].isna().sum()))
+               for item in reported}
 
     # ---- write and report --------------------------------------------------
     target_dir = Path(data_dir) if data_dir is not None else config.RAW_DATA_DIR
@@ -504,13 +651,21 @@ def load_survey_export(path: "str | Path",
                   f"{out['respondent_id'].iloc[-1]}")
             print(f"  Timestamp range             {ordered_timestamps[0]} .. "
                   f"{ordered_timestamps[-1]}")
+        counts = out["q12_group"].value_counts()
+        n_other = int(counts.get(ORG_OTHER, 0))
+        n_listed = int(out["q12_group"].notna().sum()) - n_other
+        n_distinct = int(counts.drop(labels=[ORG_OTHER], errors="ignore").size)
+        print(f"  Organisation type (q12)     "
+              f"{n_listed} in {n_distinct} listed categories, "
+              f"{n_other} free-text -> Other, "
+              f"{int(out['q12_group'].isna().sum())} blank -> missing")
         total_missing = sum(missing.values())
         print(f"  Missing values (total)      {total_missing}")
         if total_missing:
             for item, count in missing.items():
                 if count:
                     kind = "blank text" if item in TEXT_ITEMS else "NA"
-                    print(f"      {item:<4} {count:>3}  ({kind})")
+                    print(f"      {item:<10} {count:>3}  ({kind})")
         else:
             print("      none")
         if write:
@@ -531,34 +686,53 @@ def read_survey(path: "str | Path") -> pd.DataFrame:
     path = Path(path)
     frame = pd.read_csv(path)
 
-    expected = ["respondent_id"] + ITEMS
-    if list(frame.columns) != expected:
+    if list(frame.columns) != OUTPUT_COLUMNS:
         raise ValueError(
             f"{path} does not match the survey schema.\n"
-            f"  expected: {expected}\n  found:    {list(frame.columns)}"
+            f"  expected: {OUTPUT_COLUMNS}\n  found:    {list(frame.columns)}"
         )
 
     frame["respondent_id"] = frame["respondent_id"].astype("string")
-    for item in ITEMS:
-        if item in TEXT_ITEMS:
-            frame[item] = frame[item].astype("string")
+    for column in OUTPUT_COLUMNS[1:]:
+        if column in TEXT_ITEMS or column == "q12_group":
+            frame[column] = frame[column].astype("string")
         else:
-            frame[item] = pd.to_numeric(frame[item], errors="coerce").astype("Int64")
+            frame[column] = pd.to_numeric(frame[column],
+                                          errors="coerce").astype("Int64")
+
+    unexpected = set(frame["q12_group"].dropna()) - set(ORG_GROUPS)
+    if unexpected:
+        raise ValueError(
+            f"{path}: q12_group contains {sorted(unexpected)!r}, which is not "
+            f"one of {ORG_GROUPS!r}"
+        )
     return frame
 
 
 def category_labels(item: str) -> Dict[int, str]:
-    """``{code: label}`` for a coded item, for frequency tables and legends."""
+    """``{code: label}`` for a coded item, for frequency tables and legends.
+
+    Where a code has several accepted spellings (the agreement midpoint, the
+    experience bands), the first one listed -- the current form's wording --
+    is the one reported.
+    """
     if item in LIKERT_ITEMS:
         return dict(LIKERT_LABELS)
     if item not in RECODE:
         raise KeyError(f"{item} is not a coded item")
-    out = {}
+    out: Dict[int, str] = {}
     for label, code in RECODE[item].items():
         if code is pd.NA:                    # e.g. "Don't know" -> missing
             continue
-        out[int(code)] = label
+        out.setdefault(int(code), label)     # first spelling wins
     return dict(sorted(out.items()))
+
+
+def organisation_label(group: str, short: bool = True) -> str:
+    """Display label for an organisation group."""
+    if short:
+        return ORG_SHORT_LABELS.get(group, str(group))
+    return str(group)
 
 
 def _cli() -> None:
@@ -573,6 +747,12 @@ def _cli() -> None:
 
     frame = load_survey_export(args.path, data_dir=args.data_dir,
                                write=not args.no_write)
+
+    audit = organisation_audit(frame)
+    print("Organisation type (q12): every distinct raw answer and its group")
+    print("-" * 96)
+    print(audit.to_string(index=False))
+    print()
     print(frame.head(8).to_string(index=False))
 
 

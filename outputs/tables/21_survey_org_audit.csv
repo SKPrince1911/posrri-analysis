@@ -1,0 +1,15 @@
+q12_raw,n,q12_group,group_short,match
+Chattogram Port Authority,10,Chattogram Port Authority,CPA,listed option
+Bangladesh Navy,5,Bangladesh Navy,Navy,listed option
+BANGLADESH NAVY,3,Bangladesh Navy,Navy,listed option
+"Other government agency (Coast Guard, DoE, Department of Shipping, etc.)",7,"Other government agency (Coast Guard, DoE, Department of Shipping, etc.)",Govt agency,listed option
+"OTHER GOVERNMENT AGENCY (COAST GUARD, DOE, DEPARTMENT OF SHIPPING, ETC.)",2,"Other government agency (Coast Guard, DoE, Department of Shipping, etc.)",Govt agency,listed option
+Shipping agent,3,Shipping agent,Shipping agent,listed option
+SHIPPING AGENT,1,Shipping agent,Shipping agent,listed option
+Shipping line or vessel operator,5,Shipping line or vessel operator,Shipping line,listed option
+SHIPPING LINE OR VESSEL OPERATOR,1,Shipping line or vessel operator,Shipping line,listed option
+Master or ship's officer,2,Master or ship's officer,Master/officer,listed option
+(blank),7,(missing),(missing),blank -> missing
+University researcher,2,Other,Other,free text -> Other
+Customs broker,1,Other,Other,free text -> Other
+Fisheries cooperative,1,Other,Other,free text -> Other
