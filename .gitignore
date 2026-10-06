@@ -5,6 +5,10 @@
 # exception below would never be reached.)
 data/raw/*
 !data/raw/.gitkeep
+# Documentary scoring files hold no participant data (scores and public
+# sources only) and are tracked so the published index is reproducible.
+!data/raw/scores.csv
+!data/raw/benchmark.csv
 
 # Generated outputs (outputs/) are derived solely from the committed synthetic
 # data and ARE tracked, so reviewers can see the figures and tables without

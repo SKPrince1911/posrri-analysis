@@ -1,0 +1,41 @@
+domain_code,port,score,basis
+D1,CPA,1.8,Mean of the five indicator scores in scores.csv
+D2,CPA,1.4,Mean of the five indicator scores in scores.csv
+D3,CPA,1.8,Mean of the five indicator scores in scores.csv
+D4,CPA,1.8,Mean of the five indicator scores in scores.csv
+D5,CPA,1.0,Mean of the five indicator scores in scores.csv
+D6,CPA,0.6,Mean of the five indicator scores in scores.csv
+D7,CPA,0.6,Mean of the five indicator scores in scores.csv
+D8,CPA,0.4,Mean of the five indicator scores in scores.csv
+D9,CPA,0.8,Mean of the five indicator scores in scores.csv
+D10,CPA,0.6,Mean of the five indicator scores in scores.csv
+D1,Singapore,3.0,"Prevention of Pollution of the Sea Act; party to OPRC 90, OPRC-HNS, CLC 92, Fund 92, Supplementary Fund, Bunkers (ITOPF 2020)"
+D2,Singapore,3.0,MPA is lead; senior Port Master's Dept officer is On-Scene Commander; Emergency Operation Committee at Tier 2 (ITOPF 2020); used in the June 2024 Marine Honour spill (ITOPF case study)
+D3,Singapore,3.0,Two 24-hour notification points at MPA (ITOPF 2020)
+D4,Singapore,3.0,Oil Spill Contingency Plan covers all three tiers with defined escalation (ITOPF 2020)
+D5,Singapore,3.0,"MPA anti-pollution craft, booms, skimmers, dispersant; mandatory oil-company stocks; SOSRC and OSRL Loyang stockpiles (ITOPF 2020)"
+D6,Singapore,3.0,"Exercise at least once a year, full deployment every two years (ITOPF 2020); biennial Joint Oil Spill Exercise held Oct 2024 (MPA 2024)"
+D7,Singapore,3.0,"CLC 92, Fund 92, Supplementary Fund, Bunkers; MPA-ITOPF MoU sets agreed cost-recovery rates (ITOPF 2020)"
+D8,Singapore,2.0,Plan updated after incidents and exercises; terminal plans approved by MPA; sensitivity mapping not described in the profile (ITOPF 2020)
+D9,Singapore,3.0,"Every terminal, shipyard and installation must hold an MPA-approved plan; ASEAN regional plan and Straits Revolving Fund Committee (ITOPF 2020)"
+D10,Singapore,2.0,Review after incidents and exercises is stated; no published audit cycle found (ITOPF 2020)
+D1,LosAngelesLongBeach,3.0,"Oil Pollution Act 1990, National Contingency Plan (40 CFR 300), California state plan (USCG/CDFW 2024)"
+D2,LosAngelesLongBeach,3.0,"Federal On-Scene Coordinator, State OSC and responsible party in Unified Command under NIMS (USCG/CDFW 2024)"
+D3,LosAngelesLongBeach,3.0,National Response Center and Cal OES 24-hour lines; trustee notification duty (USCG/CDFW 2024)
+D4,LosAngelesLongBeach,3.0,"Worst-case discharge scenarios by mode; OSROs, National Strike Force, NOAA support (USCG/CDFW 2024)"
+D5,LosAngelesLongBeach,3.0,Coast Guard-classified OSROs listed in the Response Resource Inventory (USCG/CDFW 2024)
+D6,LosAngelesLongBeach,3.0,PREP exercises including unannounced government-initiated ones; OSPR drills and exercises regulations (USCG/CDFW 2024; CDFW-OSPR)
+D7,LosAngelesLongBeach,3.0,Oil Spill Liability Trust Fund; Certificates of Financial Responsibility (USCG/CDFW 2024; CDFW-OSPR)
+D8,LosAngelesLongBeach,3.0,"Updated annually, formal approval every five years; site strategies tested under the Sensitive Site Strategy Evaluation Program (USCG/CDFW 2024)"
+D9,LosAngelesLongBeach,3.0,"Standing Area Committee of federal, state, tribal and local agencies with industry; Oiled Wildlife Care Network volunteers (USCG/CDFW 2024)"
+D10,LosAngelesLongBeach,3.0,Annual report on best practices and challenges; lessons from exercises and incidents built into annual review (USCG/CDFW 2024)
+D1,Australia,3.0,"National Plan implements OPRC, OPRC-HNS, CLC 92, Fund 92, Bunkers; intervention powers under 1981 Act (AMSA 2020)"
+D2,Australia,3.0,Maritime Emergency Response Commander with final decision authority; AIIMS incident management (AMSA 2020)
+D3,Australia,3.0,AMSA Response Centre is the 24/7 contact point (AMSA 2020)
+D4,Australia,3.0,Levels 1-3 with cross-border and change-of-control protocols (AMSA 2020)
+D5,Australia,3.0,Nine AMSA stockpiles reachable within 24 hours for high-risk areas; AMOSC stockpiles; fixed-wing dispersant capability (AMSA 2020)
+D6,Australia,2.0,Three-level competency training and National Response Team; exercise frequency left to each jurisdiction's plan (AMSA 2020)
+D7,Australia,3.0,Protection of the Sea Levy funds preparedness and unrecoverable costs; convention liability regime (AMSA 2020)
+D8,Australia,3.0,Annual review by 31 October and five-yearly Outlook Report; risk assessment underpins stockpile placement (AMSA 2020)
+D9,Australia,3.0,"Strategic Coordination Committee, industry advisory forum, community engagement and volunteer arrangements; PACPLAN (AMSA 2020)"
+D10,Australia,2.0,Post-incident response analysis defined (s.5.12); no published audit cycle confirmed in this source (AMSA 2020)
