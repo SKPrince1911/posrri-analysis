@@ -39,13 +39,11 @@ DATA_FILES = {
     "delphi": "delphi_ratings.csv",
     "ahp": "ahp_pairwise.csv",
     "scores": "scores.csv",
-    "survey": "survey.csv",
-    "survey_export": "survey_export.csv",   # raw Google Forms export
     "benchmark": "benchmark.csv",
 }
 
 
-def resolve_paths(use_synthetic: bool = True,
+def resolve_paths(use_synthetic: bool = False,
                   data_dir: "str | os.PathLike | None" = None,
                   output_dir: "str | os.PathLike | None" = None) -> dict:
     """Return the input/output directories the pipeline should use.
@@ -53,9 +51,10 @@ def resolve_paths(use_synthetic: bool = True,
     Parameters
     ----------
     use_synthetic
-        ``True``  -> read from ``synthetic/data`` (the committed, reproducible
-                     demonstration dataset).
-        ``False`` -> read from ``data/raw`` (real, git-ignored participant data).
+        ``False`` (the default) -> read from ``data/raw``: the real, git-ignored
+                     study data. This is the pipeline's normal source.
+        ``True``  -> read from ``synthetic/data``, which exists only to smoke-test
+                     the code. Never use it to produce reported results.
     data_dir, output_dir
         Explicit overrides. Google Colab notebooks pass a Google Drive path
         here so that inputs and outputs survive the runtime being recycled.
@@ -100,17 +99,15 @@ RANDOM_SEED = 42
 RELEVANCE_SCALE = (1, 9)
 RELEVANCE_HIGH_MIN = 7
 
-#: Consensus rule: (>=80% of experts rating 7-9) OR (median >=7 AND IQR <=2).
-CONSENSUS_PCT_THRESHOLD = 0.80
-CONSENSUS_MEDIAN_MIN = 7.0
-CONSENSUS_IQR_MAX = 2.0
-
-#: Content validity. I-CVI retention cut-off and S-CVI/Ave reporting target.
-ICVI_RETAIN_THRESHOLD = 0.78
-SCVI_TARGET = 0.90
-
-#: Rounds present in the Delphi design.
-DELPHI_ROUNDS = (1, 2)
+#: Decision rule for the expert review: an indicator is retained when EVERY
+#: expert rates its relevance at or above RELEVANCE_HIGH_MIN.
+#:
+#: The panel is a handful of experts, so no percentage threshold and no
+#: chance-corrected agreement statistic is used: with four or five raters a
+#: percentage is a proportion of four or five, and a kappa estimated on that
+#: many raters carries a confidence interval too wide to inform anything.
+#: Unanimity needs no threshold tuned to the panel's size.
+DELPHI_RULE = "all experts at or above the relevance threshold"
 
 #: Auxiliary rating scales (reported, not used for retention).
 CLARITY_SCALE = (1, 5)

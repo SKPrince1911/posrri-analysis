@@ -48,20 +48,15 @@ block that executes it against the synthetic data:
 
 ```bash
 python src/structure.py      # print and self-validate the hierarchy
-python src/delphi.py         # Delphi consensus, I-CVI/S-CVI, Cohen's kappa
+python src/delphi.py         # expert ratings and the agreement rule
 python src/ahp.py            # AHP weights and consistency ratios
 python src/scoring.py        # domain, pillar and overall POSRRI
 python src/sensitivity.py    # AHP versus equal weights
-python src/viz.py            # regenerate the six core figures
-python src/survey_analysis.py    # survey descriptives, alpha and Figure 7
+python make_figures.py       # regenerate all six figures
 ```
 
-To clean a raw survey export:
 
 ```bash
-# Writes data/raw/survey.csv (git-ignored) and prints the ingest summary
-python src/survey_ingest.py path/to/forms_export.csv
-python src/survey_ingest.py export.csv --no-write   # dry run, report only
 ```
 
 For the full narrated run with tables and figures, open
@@ -118,14 +113,13 @@ posrri-analysis/
 │   └── data/                      the generated dataset (committed)
 ├── src/
 │   ├── structure.py               3 × 10 × 50 hierarchy, Saaty Random Index
-│   ├── delphi.py                  consensus, I-CVI / S-CVI, Cohen's kappa
+│   ├── delphi.py                  expert ratings, all-experts-agree rule
 │   ├── ahp.py                     weights, consistency ratios, AIJ aggregation
 │   ├── scoring.py                 weighted domain / pillar / overall POSRRI
 │   ├── sensitivity.py             AHP versus equal weights, Spearman rho
-│   ├── survey_ingest.py           Google Forms export -> survey.csv schema
-│   ├── survey_analysis.py         survey descriptives, Cronbach's alpha
-│   ├── viz.py                     seven publication-grade figures
+│   ├── viz.py                     six publication-grade figures
 │   └── report.py                  table assembly and CSV/Excel export
+├── make_figures.py                 render every figure in one command
 ├── notebooks/
 │   └── 00_run_all.ipynb           Colab-ready end-to-end run
 ├── outputs/
@@ -201,23 +195,6 @@ One row per indicator (50 rows). All three scores use the 0–3 rubric:
 work-as-done (field verification), `final_score` is the adjudicated value the
 index uses.
 
-### `survey.csv`
-`respondent_id, q1 … q11, q12_raw, q12_group, q13, q14, q15` — one row per
-consenting respondent. Normally **produced by `src/survey_ingest.py`**, not
-typed by hand. `q1, q3, q4, q5, q8, q9, q10` are the five-point agreement scale
-coded 1–5 (Strongly disagree / Disagree / Neutral / Agree / Strongly agree);
-`q2, q6` are Yes/Unsure/No coded 2/1/0; `q7` is Never/Rarely/Sometimes/Often
-coded 1–4 with "Don't know" missing; `q12` expands into `q12_raw` (organisation
-type as answered) and `q12_group` (one of seven listed categories or `Other`);
-`q13` is experience bands coded 1–4 (< 5 / 5–10 / 11–20 / > 20 years); `q14` is
-Yes/No coded 1/0; `q11, q15` are free text. Full table in
-`data/templates/README.md`.
-
-### `survey_export.csv` (raw Google Forms export)
-The *input* to the ingest: `Timestamp`, the consent question (Q0), then the 15
-items in questionnaire order. Only the order matters — headers are full question
-sentences and are never matched on.
-
 ### `benchmark.csv`
 `domain_code, port, score` — one row per domain × port (10 × 4 = 40 rows),
 score on the 0–3 scale.
@@ -226,18 +203,21 @@ score on the 0–3 scale.
 
 ## Method summary
 
-### Delphi (`src/delphi.py`)
-Per indicator and round: median relevance, IQR, and the percentage rating 7–9.
-The protocol consensus flag is
+### Expert review (`src/delphi.py`)
+The panel is a handful of experts, so the analysis is deliberately austere: it
+reports **every expert's rating for every indicator**, the range across experts,
+and applies the **all-experts-agree rule** — an indicator is retained when every
+expert rates its relevance at or above the agreed threshold
+(`config.RELEVANCE_HIGH_MIN`). Indicators with one or more dissenting ratings
+are listed separately, with the dissenting experts named, because those are the
+ones the panel has to discuss.
 
-> **consensus** = (≥ 80 % of experts rate 7–9) **or** (median ≥ 7 **and** IQR ≤ 2)
-
-Content validity follows Zamanzadeh et al. (2015): **I-CVI** is the proportion
-rating 7–9, with items retained at **I-CVI ≥ 0.78**; the chance-corrected
-**modified kappa** κ\* = (I-CVI − P<sub>c</sub>) / (1 − P<sub>c</sub>) is reported
-alongside; **S-CVI/Ave** (mean I-CVI) is reported against a target of **≥ 0.90**,
-with S-CVI/UA for completeness. Round-to-round stability is quantified with
-**Cohen's kappa** on the retain/drop decisions.
+No percentage-in-agreement and no chance-corrected statistic (Cohen's or
+Fleiss' kappa) is reported. With four or five raters a percentage is a
+proportion of four or five, and a kappa estimated on that many raters carries a
+confidence interval wide enough to be uninformative; reporting either would
+dress a judgement up as a measurement. Unanimity needs no threshold tuned to the
+panel's size and cannot be moved by rounding.
 
 ### AHP (`src/ahp.py`)
 Priority weights come from the **normalised row geometric mean**. For each
@@ -265,60 +245,6 @@ The aggregation is re-run with every indicator weighted 1/50 (the
 change in the overall index, and the **Spearman rank correlation** between the
 two domain rankings (Kendall's τ-b as a tie-robust companion).
 
-### Survey ingest (`src/survey_ingest.py`)
-A Google Forms export cannot be read straight into the analysis: the first
-column is a Forms `Timestamp`, the second is the consent question (Q0), the
-headers are full question sentences that change whenever the form is edited, and
-the answers are category labels rather than codes. The ingest therefore:
-
-1. **checks consent first** — any row not answering "Yes" is reported (row
-   number, timestamp, the value found) and dropped, and the invariant that every
-   retained row consented is re-checked afterwards;
-2. drops `Timestamp` and Q0, then maps the remaining columns to `q1`…`q15`
-   **by position**, failing loudly if there are not exactly 15;
-3. assigns `respondent_id` as `SRV-001`, `SRV-002`, … in **ascending timestamp
-   order** (not file order). The prefix is set once by
-   `survey_ingest.RESPONDENT_ID_PREFIX`; `AGT-` is deliberately avoided because
-   it is reserved for shipping-agent interview participants in the field
-   identifier scheme, and the validator asserts no survey id collides with it;
-4. recodes the categorical items using the explicit tables at the top of the
-   module — matching is tolerant of case, whitespace, curly apostrophes and
-   en-dashes (Google Sheets substitutes all three) but **not** of different
-   wording: an unrecognised label raises an error naming the offending value
-   rather than silently becoming missing;
-5. resolves the seven agreement items from **either** representation, per
-   value: the labels the multiple-choice questions export (`Strongly disagree`,
-   `Disagree`, `Neutral`, `Agree`, `Strongly agree` → 1–5, with
-   `Neither agree nor disagree` accepted as an alias for the midpoint), or a
-   bare 1–5 integer from responses collected before those items were switched
-   from a Forms linear scale. A single column may mix both, so a form edited
-   partway through collection needs no migration step;
-6. splits the organisation question (q12) into `q12_raw` and `q12_group`. The
-   form offers seven organisation types plus a free-text "Other", and Forms
-   exports a typed answer as raw text in the same column. An exact match to a
-   listed option — ignoring case and padding — keeps that option; anything else
-   becomes `Other`; a **blank stays missing** rather than being counted as
-   `Other`, which would invent a group of non-responders. The raw answer is
-   never discarded, and `organisation_audit()` prints every distinct raw value
-   against the group it was assigned, because free-text coding is the one step
-   here a machine cannot fully verify;
-7. range-checks every coded item, reports missing counts per column (and the
-   split between label and numeric agreement answers), and writes `survey.csv`
-   to `data/raw/` — never to `synthetic/data/`.
-
-`"Don't know"` on the exercise-frequency item becomes missing, because it is not
-a point on the Never…Often scale. `"Unsure"` on the awareness items scores 1,
-because a respondent who does not know whether a plan exists is evidence about
-how well that plan is communicated.
-
-### Survey analysis (`src/survey_analysis.py`)
-n, mean, SD and median for the seven Likert items; frequency tables with the
-original option labels restored for the coded items; response counts for the
-free-text items. **Cronbach's alpha** over the seven Likert confidence items
-(`q1, q3, q4, q5, q8, q9, q10`) using sample variances and complete cases, with
-the corrected item-total correlations and alpha-if-item-deleted that identify a
-misbehaving item.
-
 ---
 
 ## Outputs
@@ -334,15 +260,12 @@ greyscale-legible (colour is never the only channel):
 | `fig2_domain_scores_weights` | Domain scores grouped by pillar, AHP weights annotated |
 | `fig3_indicator_heatmap` | All 50 indicator scores (0–3), grouped by domain |
 | `fig4_implementation_gap` | Diverging bars: work-as-imagined vs work-as-done |
-| `fig5_delphi_consensus` | Median relevance + IQR whiskers, consensus flagged |
+| `fig5_delphi_ratings` | Every expert rating per indicator, agreement rule applied |
 | `fig6_sensitivity_scatter` | AHP vs equal-weight domain scores, Spearman ρ annotated |
-| `fig7_survey_likert` | Stacked distribution of the five-point survey Likert items |
-| `fig8_survey_by_group` | Mean agreement per item by organisation type, ± 1 SE |
 
 **Tables** — 22 CSVs plus `posrri_results.xlsx`, a single workbook with every
 table as a sheet (summary, structure, Delphi per-indicator and per-round,
 retained/dropped lists, AHP consistency report, pillar/domain/indicator
-weights, indicator/domain/pillar scores, sensitivity, benchmark, and the survey
 descriptives, frequency tables, free-text counts, alpha item statistics,
 organisation-group counts and the q12 free-text coding audit).
 
@@ -355,35 +278,18 @@ python tests/validate_pipeline.py           # full run, renders figures
 python tests/validate_pipeline.py --quick   # skip figure rendering
 ```
 
-Runs the whole pipeline on synthetic data and prints a PASS/FAIL checklist over
-24 checks: hierarchy shape, data completeness, generator determinism, CR
-reported for every matrix and all below 0.10, global weights summing to 1.0,
-Delphi consensus flags and I-CVI for all 50 indicators, the consensus rule
-matching the protocol exactly, Cohen's kappa returning a finite value (and
-`nan` rather than an exception in the degenerate case), POSRRI and all domain
-scores within 0–100, exact 0/100 endpoints for the 0–3 rubric, Spearman ρ in
-range, all six figures present, and every table exporting.
+Runs the whole pipeline on the study data in `data/raw` and prints a PASS/FAIL
+checklist: hierarchy shape, study data present and valid, a CR reported for
+every AHP matrix with none at or above 0.10, global weights summing to 1.0, the
+row-geometric-mean arithmetic, every expert's rating present for every
+indicator, retention matching the all-experts-agree rule exactly (and no
+percentage or kappa being reported), POSRRI and all domain scores within 0–100
+with the 0–3 rubric mapping exactly to the endpoints, Spearman ρ in range, all
+six figures present, and every table exporting.
 
-The survey checks cover the ingest specifically: that it produces exactly the
-`respondent_id, q1 … q15` schema and that the committed `survey.csv` is
-byte-equivalent to what the ingest produces (so the demonstration file cannot
-have been written by anything else), that respondent ids are unique, sequential
-and follow ascending timestamp order, that every coded value lies inside its
-allowed set with the Likert items within 1-5 and the text items still text, that
-Cronbach's alpha returns a finite value (and is exactly 1.0 on seven identical
-items), and that Figure 7 exists. A dedicated check covers the dual-format
-Likert loader: exact and case/whitespace-mangled agreement labels, numeric
-passthrough as string, int and float, both representations mixed in one column,
-`"Disagree"` not being absorbed by `"Strongly disagree"`, and an error naming
-the offending value for each unrecognised input — plus an assertion that the
-committed export actually contains both representations, so the paths are
-exercised rather than merely reachable. Further checks pin the q13 experience
-bands to the rebuilt form's cut points (and assert the pre-rebuild bands, which
-cut at 2/5/10 rather than 5/10/20, are *refused* rather than silently merged),
-and verify that every q12 answer lands in a valid organisation group — each
-listed option matching itself under any casing, free text falling through to
-`Other`, blanks staying missing, and every row's group agreeing with its raw
-answer.
+**The synthetic dataset is not used for validation.** It exists only to
+smoke-test the code, and `--data-dir synthetic/data` makes that explicit; a
+checklist that passes on invented numbers says nothing about the analysis.
 
 Exits non-zero on any failure.
 
@@ -395,19 +301,14 @@ Exits non-zero on any failure.
   streams, one per synthetic dataset, so adding or reordering a dataset never
   perturbs the others. Regeneration is verified frame-for-frame by the
   validation script.
-* **No magic numbers.** Every threshold — I-CVI 0.78, S-CVI target 0.90, the
-  consensus rule, CR 0.10, the 0–3 rubric, the readiness bands — lives in
-  `config.py`.
+* **No magic numbers.** Every threshold — the relevance threshold, CR 0.10, the
+  0–3 rubric, the readiness bands — lives in `config.py`.
 * **One structure.** The hierarchy is defined once in `src/structure.py` and
   cannot drift between stages.
-* **One survey coding.** The recode tables live only in
-  `src/survey_ingest.py`, and the committed synthetic `survey.csv` is produced
   by running that same ingest over the synthetic raw export — so the
   demonstration data cannot drift from the coding rules, and the validator
   asserts the two agree.
 * **`data/raw/` is git-ignored.** Real participant data — expert identities,
-  interview-derived scores, survey responses — must never be committed. The
-  survey ingest writes there by default for exactly this reason. In
   Colab, keep it in Drive. The committed synthetic dataset exists precisely so
   that the pipeline can be demonstrated and reviewed without exposing anyone's
   data.
@@ -426,17 +327,14 @@ dropped lists are exported for exactly that purpose.
 
 * **Saaty, T.L. (1980)** *The Analytic Hierarchy Process.* New York: McGraw-Hill.
   — AHP, the 1–9 fundamental scale, the Random Index, and the consistency ratio.
-* **Zamanzadeh, V., Ghahramanian, A., Rassouli, M., Abbaszadeh, A.,
-  Alavi-Majd, H. & Nikanfar, A.-R. (2015)** 'Design and implementation content
-  validity study: development of an instrument for measuring patient-centered
-  communication', *Journal of Caring Sciences* 4(2), 165–178.
-  — I-CVI, S-CVI/Ave, S-CVI/UA and the chance-corrected modified kappa.
-* **Hohmann, E. et al. (2025)** — Delphi methodology: reporting both a
-  consensus criterion and a stability criterion across rounds, which motivates
-  the round-to-round Cohen's kappa reported here.
 * **Okabe, M. & Ito, K. (2008)** 'Color universal design: how to make figures
   and presentations that are friendly to colorblind people'.
   — the colourblind-safe qualitative palette used in every figure.
+
+The expert review reports raw ratings and a unanimity rule rather than a
+content-validity index, because the panel is too small for an index or a
+chance-corrected agreement statistic to be meaningful; see
+`src/delphi.py` for the reasoning.
 
 Convention and instrument sources referenced by the indicator set include the
 **IMO OPRC Convention 1990**, the **CLC/FUND** compensation regime, and IMO

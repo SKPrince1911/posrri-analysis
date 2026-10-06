@@ -24,6 +24,7 @@ Run ``python src/viz.py`` to regenerate all six figures from synthetic data.
 from __future__ import annotations
 
 import sys
+import textwrap
 from pathlib import Path
 from typing import Dict, List, Sequence
 
@@ -67,35 +68,11 @@ SCORE_RAMP = ["#EEF4F9", "#A8C9E2", "#3D8DC4", "#08508A"]
 #: figure can never disagree with the scoring definition used to produce it.
 SCORE_LABELS = {k: config.rubric_label(k) for k in sorted(config.SCORE_RUBRIC)}
 
-#: Five-point Likert ramp. The scale has a true neutral midpoint, so this is a
-#: diverging scheme -- two hues either side of a neutral grey -- not a rainbow
-#: and not a single-hue sequential ramp.
-#:
-#: The two arms are deliberately asymmetric in lightness. A symmetric ramp put
-#: the extremes within 0.003 relative luminance of each other, which makes
-#: "not at all" and "completely" the same shade of grey in black-and-white
-#: print; these steps hold the arms monotone in lightness (0.045 -> 0.283 ->
-#: 0.624 -> 0.468 -> 0.217) and keep the ends 0.172 apart.
-LIKERT_RAMP = ["#6B2600", "#D9773C", "#CFCFCF", "#8FBBE0", "#3C86BE"]
-
-#: Per-segment text colour, chosen for >= 4.4:1 contrast against its fill.
-LIKERT_TEXT = ["#FFFFFF", "#1A1A1A", "#1A1A1A", "#1A1A1A", "#1A1A1A"]
-
 #: Diverging scheme for the documentation-vs-practice gap: two hues, neutral
 #: midpoint, no rainbow.
 GAP_POSITIVE = OI["vermillion"]     # paperwork ahead of practice
 GAP_NEGATIVE = OI["blue"]           # practice ahead of paperwork
 GAP_NEUTRAL = "#BFBFBF"
-
-#: Organisation-group hues, in ORG_CATEGORIES order, with neutral grey held
-#: back for the residual "Other". Validated as a categorical set: all seven in
-#: the lightness band, all above the chroma floor, worst adjacent CVD pair
-#: dE 9.6 (deutan). Marker shapes vary too, so the series stay separable in
-#: greyscale and for the closest colour pair.
-ORG_COLOURS = ["#0072B2", "#D55E00", "#009E73", "#E69F00",
-               "#CC79A7", "#56B4E9", "#8B4513"]
-ORG_OTHER_COLOUR = "#999999"
-ORG_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*"]
 
 INK = "#1A1A1A"
 INK_MUTED = "#5A5A5A"
@@ -237,6 +214,17 @@ def _repel_labels(ax, xs, ys, labels, fontsize=8, pad_px=10.0, **text_kw):
         ann.set_position(best)
         placed_boxes.append(best_box)
     return placed_boxes
+
+
+def indicator_label(code: str, width: int = 54) -> str:
+    """Plain-language name for an indicator, wrapped for an axis.
+
+    Figures carry the indicator's name, never its code: "D7.4" tells a reader
+    nothing, and a figure that needs a lookup table to be read is a figure that
+    will be misread.
+    """
+    name = st.INDICATOR_LABELS.get(code, code)
+    return "\n".join(textwrap.wrap(name, width=width)) or code
 
 
 def _domain_axis_labels() -> List[str]:
@@ -415,7 +403,7 @@ def fig_indicator_heatmap(indicators: pd.DataFrame,
     cmap = ListedColormap(SCORE_RAMP)
     norm = BoundaryNorm([-0.5, 0.5, 1.5, 2.5, 3.5], cmap.N)
 
-    fig, ax = plt.subplots(figsize=(7.6, 5.8))
+    fig, ax = plt.subplots(figsize=(11.0, 8.4))
     im = ax.imshow(grid.to_numpy(dtype=float), cmap=cmap, norm=norm, aspect="auto")
 
     ax.set_xticks(range(st.INDICATORS_PER_DOMAIN))
@@ -441,10 +429,12 @@ def fig_indicator_heatmap(indicators: pd.DataFrame,
             if pd.isna(val):
                 continue
             ink = "white" if val >= 2 else INK
-            ax.text(j, i - 0.19, f"{dom}.{j + 1}", ha="center", va="center",
-                    fontsize=6.5, color=ink, alpha=0.85)
-            ax.text(j, i + 0.13, f"{int(round(val))}", ha="center", va="center",
-                    fontsize=11, fontweight="bold", color=ink)
+            short = "\n".join(textwrap.wrap(
+                st.INDICATOR_LABELS.get(f"{dom}.{j + 1}", ""), width=22)[:3])
+            ax.text(j, i - 0.26, short, ha="center", va="center",
+                    fontsize=5.4, color=ink, alpha=0.9, linespacing=1.15)
+            ax.text(j, i + 0.28, f"{int(round(val))}", ha="center", va="center",
+                    fontsize=12, fontweight="bold", color=ink)
 
     cbar = fig.colorbar(im, ax=ax, ticks=[0, 1, 2, 3], pad=0.02, shrink=0.82)
     cbar.ax.set_yticklabels([SCORE_LABELS[k] for k in range(4)], fontsize=7.5)
@@ -453,8 +443,8 @@ def fig_indicator_heatmap(indicators: pd.DataFrame,
 
     ax.set_title("Indicator-level readiness scores, grouped by domain")
     fig.text(0.02, 0.012,
-             "Each cell is labelled with its indicator code and adjudicated 0-3 "
-             "score. Columns are the five indicators within each domain, in order.",
+             "Each cell is labelled with the indicator it measures and its "
+             "adjudicated 0-3 score.",
              fontsize=7.5, color=INK_MUTED)
     return save_figure(fig, stem, figure_dir)
 
@@ -504,8 +494,8 @@ def fig_implementation_gap(indicators: pd.DataFrame,
 
     # Height tracks the number of rows actually drawn, so the row pitch stays
     # constant and the indicator labels stay legible whichever mode is used.
-    height = float(np.clip(2.9 + 0.203 * len(plotted), 4.0, 11.0))
-    fig, ax = plt.subplots(figsize=(6.8, height))
+    height = float(np.clip(2.9 + 0.30 * len(plotted), 4.5, 14.0))
+    fig, ax = plt.subplots(figsize=(10.4, height))
     ax.set_axisbelow(True)
     ax.xaxis.grid(True, color=GRID, linewidth=0.6)
     ax.barh(y, gaps, height=0.7, color=colours, edgecolor="white", linewidth=0.5)
@@ -518,7 +508,8 @@ def fig_implementation_gap(indicators: pd.DataFrame,
                    facecolor=GAP_NEUTRAL, edgecolor="white", linewidth=0.5, zorder=3)
 
     ax.set_yticks(y)
-    ax.set_yticklabels(plotted["indicator_code"], fontsize=7)
+    ax.set_yticklabels([indicator_label(c, width=46)
+                        for c in plotted["indicator_code"]], fontsize=6.5)
     ax.set_ylim(y.min() - 0.9, y.max() + 1.9)
     lim = max(1.0, float(np.abs(gaps).max())) + 0.55
     ax.set_xlim(-lim, lim)
@@ -567,85 +558,93 @@ def fig_implementation_gap(indicators: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
-# (e) Delphi consensus
+# (e) Expert review: ratings per indicator
 # ---------------------------------------------------------------------------
 
-def fig_delphi_consensus(delphi_long: pd.DataFrame,
-                         figure_dir: "Path | str" = config.FIGURE_DIR,
-                         stem: str = "fig5_delphi_consensus",
-                         round_no: "int | None" = None) -> List[Path]:
-    """Median relevance with IQR whiskers for every indicator, consensus flagged.
+def fig_delphi_ratings(per_indicator: pd.DataFrame,
+                       figure_dir: "Path | str" = config.FIGURE_DIR,
+                       stem: str = "fig5_delphi_ratings",
+                       experts: "Sequence[str] | None" = None) -> List[Path]:
+    """Every expert's relevance rating per indicator, with the agreement rule.
 
-    ``delphi_long`` is the indicator x round table from :func:`src.delphi.run_delphi`.
-    Consensus is encoded by both colour and marker fill, so the flag survives
-    greyscale printing.
+    ``per_indicator`` is the table from :func:`src.delphi.indicator_table`: one
+    row per indicator, one column per expert.
+
+    With a handful of experts the honest display is the raw judgements, not a
+    summary of them -- so every rating is drawn. Indicators where one or more
+    experts rated below the threshold are flagged, because those are the ones
+    the panel has to discuss; nothing here is a percentage or a chance-corrected
+    statistic, neither of which a panel this size can support.
     """
     apply_style()
-    df = delphi_long.copy()
-    if round_no is None:
-        round_no = int(df["round"].max())
-    df = df[df["round"] == round_no].copy()
-    df["_order"] = df["indicator_code"].map({c: i for i, c in enumerate(st.INDICATORS)})
+    df = per_indicator.copy()
+    if experts is None:
+        reserved = {"indicator_code", "indicator_name", "domain_code",
+                    "domain_name", "pillar_code", "n_experts", "min_relevance",
+                    "median_relevance", "max_relevance", "n_below_threshold",
+                    "dissenting_experts", "all_experts_agree", "decision"}
+        experts = [c for c in df.columns
+                   if c not in reserved and not c.startswith("mean_")]
+    experts = list(experts)
+    if not experts:
+        raise ValueError("no expert rating columns found in per_indicator")
+
+    df["_order"] = df["indicator_code"].map(
+        {c: i for i, c in enumerate(st.INDICATORS)})
     df = df.sort_values("_order")
-
     y = np.arange(len(df))[::-1]
-    med = df["median_relevance"].to_numpy(dtype=float)
-    q1 = df["q1_relevance"].to_numpy(dtype=float)
-    q3 = df["q3_relevance"].to_numpy(dtype=float)
-    consensus = df["consensus"].to_numpy(dtype=bool)
+    threshold = config.RELEVANCE_HIGH_MIN
 
-    fig, ax = plt.subplots(figsize=(6.8, 10.2))
+    fig, ax = plt.subplots(figsize=(10.2, max(5.0, 0.26 * len(df) + 2.6)))
     ax.set_axisbelow(True)
     ax.xaxis.grid(True, color=GRID, linewidth=0.6)
 
-    ax.hlines(y, q1, q3, color=INK_MUTED, linewidth=1.4, alpha=0.85, zorder=2)
-    for cap in (q1, q3):                         # whisker caps
-        ax.vlines(cap, y - 0.28, y + 0.28, color=INK_MUTED, linewidth=1.0, zorder=2)
+    # Shade the band below the threshold: anything left of it is a dissent.
+    ax.axvspan(config.RELEVANCE_SCALE[0] - 0.5, threshold - 0.5,
+               color=OI["vermillion"], alpha=0.06, zorder=0)
+    ax.axvline(threshold - 0.5, color=OI["vermillion"], linestyle="--",
+               linewidth=1.1, zorder=1)
 
-    ax.scatter(med[consensus], y[consensus], s=34, marker="o",
-               facecolor=OI["blue"], edgecolor="white", linewidth=0.7,
-               zorder=3, label="Consensus reached")
-    ax.scatter(med[~consensus], y[~consensus], s=38, marker="D",
-               facecolor="white", edgecolor=OI["vermillion"], linewidth=1.4,
-               zorder=3, label="No consensus")
+    # One marker per expert per indicator, nudged apart so ties stay countable.
+    offsets = np.linspace(0.26, -0.26, len(experts))
+    for k, expert in enumerate(experts):
+        values = pd.to_numeric(df[expert], errors="coerce").to_numpy(dtype=float)
+        ax.scatter(values, y + offsets[k], s=26,
+                   marker=config.MARKERS[k % len(config.MARKERS)],
+                   color=config.PALETTE[k % len(config.PALETTE)],
+                   edgecolor="white", linewidth=0.5, zorder=3, label=expert)
 
-    ax.axvline(config.RELEVANCE_HIGH_MIN, color=OI["bluish_green"],
-               linestyle="--", linewidth=1.1, zorder=1,
-               label=f"Relevance threshold ({config.RELEVANCE_HIGH_MIN})")
+    agree = df["all_experts_agree"].to_numpy(dtype=bool)
+    for row, ok in zip(y, agree):
+        if not ok:
+            ax.axhspan(row - 0.5, row + 0.5, color=OI["vermillion"],
+                       alpha=0.07, zorder=0)
 
     ax.set_yticks(y)
-    ax.set_yticklabels(df["indicator_code"], fontsize=6.5)
-    ax.set_ylim(y.min() - 0.8, y.max() + 0.8)
-    ax.set_xlim(0.6, 9.4)
-    ax.set_xticks(range(1, 10))
-    ax.set_xlabel("Expert relevance rating (1-9): median with interquartile range")
-    ax.set_title(f"Delphi round {round_no}: relevance and consensus by indicator")
+    ax.set_yticklabels([indicator_label(c, width=44)
+                        for c in df["indicator_code"]], fontsize=6.5)
+    ax.set_ylim(y.min() - 0.7, y.max() + 0.7)
+    lo, hi = config.RELEVANCE_SCALE
+    ax.set_xlim(lo - 0.5, hi + 0.5)
+    ax.set_xticks(range(lo, hi + 1))
+    ax.set_xlabel("Expert relevance rating (1-9); shaded band is below the "
+                  f"agreed threshold of {threshold}")
+    ax.set_title("Expert review: every rating, by indicator")
 
-    for k in range(1, st.N_DOMAINS):
-        ax.axhline(y[k * st.INDICATORS_PER_DOMAIN - 1] - 0.5,
-                   color=GRID, linewidth=0.7, zorder=0)
-
-    # Consensus and retention are two different criteria applied to the same
-    # ratings, and they do not select the same indicators. The caption reports
-    # both counts separately so the figure cannot be read as showing one number.
-    n_total = len(df)
-    n_consensus = int(consensus.sum())
-    n_retained = int(df["retain"].sum()) if "retain" in df.columns else None
-
-    legend = ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.045), ncol=1)
-
-    caption = (
-        f"CONSENSUS (plotted above): >=80% of experts rating 7-9, OR median >=7 "
-        f"with IQR <=2  --  met by {n_consensus} of {n_total} indicators."
-    )
-    if n_retained is not None:
-        caption += (
-            f"\nRETENTION (a separate criterion, not plotted): "
-            f"I-CVI >= {config.ICVI_RETAIN_THRESHOLD} "
-            f"--  met by {n_retained} of {n_total} indicators."
-        )
-    _caption_below(fig, legend, caption, fontsize=7.5, color=INK_MUTED,
-                   linespacing=1.6)
+    legend = ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.04),
+                       ncol=min(len(experts), 8), handlelength=1.1,
+                       columnspacing=1.4, title=None)
+    # Lay out before measuring the legend: on a figure this tall tight_layout
+    # moves it far enough that a caption placed first ends up above it.
+    fig.tight_layout()
+    n_agree = int(agree.sum())
+    _caption_below(
+        fig, legend,
+        f"Retained when all {len(experts)} experts rate relevance >= {threshold}: "
+        f"{n_agree} of {len(df)} indicators. "
+        f"Rows shaded red have at least one rating below the threshold and are "
+        f"for panel discussion.",
+        fontsize=7.5, color=INK_MUTED)
     return save_figure(fig, stem, figure_dir)
 
 
@@ -721,221 +720,6 @@ def fig_sensitivity_scatter(sens_domains: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
-# (g) Survey: Likert distributions
-# ---------------------------------------------------------------------------
-
-def fig_survey_likert(survey: pd.DataFrame,
-                      figure_dir: "Path | str" = config.FIGURE_DIR,
-                      stem: str = "fig7_survey_likert") -> List[Path]:
-    """Horizontal stacked bars of the five-point Likert distributions.
-
-    One bar per Likert item, each spanning 0-100% of valid responses, split
-    into the five response levels in fixed order. Items are sorted by the
-    share answering 4-5, which is the quantity a reader compares across items.
-
-    Colour is a diverging ramp about the neutral midpoint (see
-    ``LIKERT_RAMP``), but identity never rests on colour: segment order along
-    the bar is itself the ordinal encoding, every segment of 6% or more prints
-    its percentage, and the margin reports % low, % high and the item mean.
-    """
-    from src.survey_ingest import ITEM_LABELS, LIKERT_ITEMS, LIKERT_LABELS
-
-    apply_style()
-    levels = [1, 2, 3, 4, 5]
-
-    rows = []
-    for item in LIKERT_ITEMS:
-        values = pd.to_numeric(survey[item], errors="coerce").dropna().astype(int)
-        n = int(values.size)
-        if n == 0:
-            continue
-        counts = values.value_counts().reindex(levels, fill_value=0)
-        pct = 100.0 * counts / n
-        rows.append({
-            "item": item,
-            "label": ITEM_LABELS.get(item, item),
-            "n": n,
-            "mean": float(values.mean()),
-            "pct_low": float(pct[1] + pct[2]),
-            "pct_high": float(pct[4] + pct[5]),
-            **{f"pct_{k}": float(pct[k]) for k in levels},
-        })
-    if not rows:
-        raise ValueError("no Likert responses to plot")
-
-    df = pd.DataFrame(rows).sort_values("pct_high", ascending=True).reset_index(drop=True)
-    y = np.arange(len(df))
-
-    fig, ax = plt.subplots(figsize=(8.2, 0.46 * len(df) + 2.0))
-    ax.set_axisbelow(True)
-    ax.xaxis.grid(True, color=GRID, linewidth=0.6)
-
-    left = np.zeros(len(df))
-    for idx, level in enumerate(levels):
-        widths = df[f"pct_{level}"].to_numpy(dtype=float)
-        ax.barh(y, widths, left=left, height=0.68, color=LIKERT_RAMP[idx],
-                edgecolor="white", linewidth=1.2,
-                label=f"{level}  {LIKERT_LABELS[level]}")
-        for yi, (w, l0) in enumerate(zip(widths, left)):
-            if w >= 6.0:                      # below this a label cannot fit
-                ax.text(l0 + w / 2, yi, f"{w:.0f}", ha="center", va="center",
-                        fontsize=7.5, fontweight="bold", color=LIKERT_TEXT[idx])
-        left = left + widths
-
-    ax.set_yticks(y)
-    ax.set_yticklabels(df["label"])
-    ax.set_xlim(0, 100)
-    ax.set_xticks([0, 20, 40, 60, 80, 100])
-    ax.set_xlabel("Share of valid responses (%)")
-    ax.set_title("Stakeholder survey: distribution of five-point Likert responses")
-
-    # Margin table: the summary numbers a reader would otherwise have to
-    # reconstruct by eye from the segment widths.
-    x_low, x_high, x_mean, x_n = 108.0, 119.0, 130.0, 139.0
-    for yi, row in df.iterrows():
-        ax.text(x_low, yi, f"{row['pct_low']:.0f}", ha="right", va="center",
-                fontsize=8, color=LIKERT_RAMP[0], fontweight="bold")
-        ax.text(x_high, yi, f"{row['pct_high']:.0f}", ha="right", va="center",
-                fontsize=8, color=LIKERT_RAMP[4], fontweight="bold")
-        ax.text(x_mean, yi, f"{row['mean']:.2f}", ha="right", va="center",
-                fontsize=8, color=INK)
-        ax.text(x_n, yi, f"{int(row['n'])}", ha="right", va="center",
-                fontsize=8, color=INK_MUTED)
-    head = y.max() + 0.62
-    for x, text, colour in ((x_low, "% 1-2", LIKERT_RAMP[0]),
-                            (x_high, "% 4-5", LIKERT_RAMP[4]),
-                            (x_mean, "mean", INK_MUTED),
-                            (x_n, "n", INK_MUTED)):
-        ax.text(x, head, text, ha="right", va="center", fontsize=7.5,
-                color=colour, style="italic")
-
-    ax.set_xlim(0, x_n + 2)
-    ax.set_ylim(-0.65, head + 0.45)
-    ax.spines["bottom"].set_bounds(0, 100)
-
-    ax.legend(loc="upper center", bbox_to_anchor=(0.40, -0.13), ncol=5,
-              handlelength=1.3, columnspacing=1.2, fontsize=7.5)
-    return save_figure(fig, stem, figure_dir)
-
-
-# ---------------------------------------------------------------------------
-# (h) Survey: agreement by organisation group
-# ---------------------------------------------------------------------------
-
-def fig_survey_by_group(survey: pd.DataFrame,
-                        figure_dir: "Path | str" = config.FIGURE_DIR,
-                        stem: str = "fig8_survey_by_group",
-                        min_group_n: int = 3) -> List[Path]:
-    """Mean agreement on each of the seven items, by organisation group.
-
-    A dot plot rather than grouped bars: the quantity is a mean on a 1-5
-    scale, which does not start at zero, and bars would imply a zero baseline
-    that the scale does not have.
-
-    Groups smaller than ``min_group_n`` are pooled into "Other" -- a mean over
-    one or two respondents is not a group estimate -- and the caption says
-    which. Respondents who left the organisation question blank have no group
-    and are excluded; their count is reported too.
-
-    Each point carries a +/- 1 standard error whisker. With groups this small
-    the differences between them are mostly not resolvable, and drawing the
-    means alone would invite the reader to over-read them.
-    """
-    from src.survey_ingest import (ITEM_LABELS, LIKERT_ITEMS, ORG_CATEGORIES,
-                                   ORG_GROUPS, ORG_OTHER, ORG_SHORT_LABELS)
-
-    apply_style()
-    if "q12_group" not in survey.columns:
-        raise KeyError("survey frame has no q12_group column")
-
-    frame = survey.copy()
-    n_missing_group = int(frame["q12_group"].isna().sum())
-    frame = frame[frame["q12_group"].notna()].copy()
-    if frame.empty:
-        raise ValueError("no respondents carry an organisation group")
-
-    # ---- pool the groups too small to support a mean ----------------------
-    counts = frame["q12_group"].value_counts()
-    pooled = sorted(g for g, n in counts.items()
-                    if g != ORG_OTHER and n < min_group_n)
-    if pooled:
-        frame["q12_group"] = frame["q12_group"].where(
-            ~frame["q12_group"].isin(pooled), ORG_OTHER)
-
-    order = [g for g in ORG_GROUPS if g in set(frame["q12_group"])]
-    group_n = {g: int((frame["q12_group"] == g).sum()) for g in order}
-    colours = {g: (ORG_OTHER_COLOUR if g == ORG_OTHER
-                   else ORG_COLOURS[ORG_CATEGORIES.index(g) % len(ORG_COLOURS)])
-               for g in order}
-    markers = {g: (ORG_MARKERS[-1] if g == ORG_OTHER
-                   else ORG_MARKERS[ORG_CATEGORIES.index(g) % len(ORG_MARKERS)])
-               for g in order}
-
-    # ---- item order: strongest overall agreement at the top ---------------
-    overall = {item: pd.to_numeric(frame[item], errors="coerce").mean()
-               for item in LIKERT_ITEMS}
-    items = sorted(LIKERT_ITEMS, key=lambda i: overall[i])
-    y = np.arange(len(items))
-
-    fig, ax = plt.subplots(figsize=(8.6, 0.78 * len(items) + 2.6))
-    ax.set_axisbelow(True)
-    ax.xaxis.grid(True, color=GRID, linewidth=0.6)
-
-    # Neutral is the meaningful anchor on an agreement scale.
-    ax.axvline(3.0, color=INK_MUTED, linestyle="--", linewidth=1.0, zorder=1)
-
-    spread = 0.62
-    offsets = np.linspace(spread / 2, -spread / 2, len(order))
-    for k, group in enumerate(order):
-        block = frame[frame["q12_group"] == group]
-        means, errs, ys = [], [], []
-        for row, item in enumerate(items):
-            values = pd.to_numeric(block[item], errors="coerce").dropna()
-            if values.empty:
-                continue
-            means.append(float(values.mean()))
-            errs.append(float(values.std(ddof=1) / np.sqrt(len(values)))
-                        if len(values) > 1 else 0.0)
-            ys.append(row + offsets[k])
-        ax.errorbar(means, ys, xerr=errs, fmt="none", ecolor=colours[group],
-                    elinewidth=1.0, alpha=0.55, capsize=0, zorder=2)
-        size = 78 if markers[group] == "*" else 42
-        ax.scatter(means, ys, s=size, marker=markers[group], color=colours[group],
-                   edgecolor="white", linewidth=0.7, zorder=3,
-                   label=f"{ORG_SHORT_LABELS.get(group, group)} "
-                         f"(n = {group_n[group]})")
-
-    for row in range(len(items) - 1):
-        ax.axhline(row + 0.5, color=GRID, linewidth=0.7, zorder=0)
-
-    ax.set_yticks(y)
-    ax.set_yticklabels([ITEM_LABELS.get(i, i) for i in items])
-    ax.set_ylim(-0.6, len(items) - 0.4)
-    ax.set_xlim(1, 5)
-    ax.set_xticks([1, 2, 3, 4, 5])
-    ax.set_xticklabels(["1\nStrongly\ndisagree", "2\nDisagree", "3\nNeutral",
-                        "4\nAgree", "5\nStrongly\nagree"], fontsize=7.5)
-    ax.set_xlabel("Mean agreement (1-5), with +/- 1 standard error")
-    ax.set_title("Agreement on each item by organisation type")
-
-    legend = ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.11),
-                       ncol=min(4, len(order)), handlelength=1.2,
-                       columnspacing=1.6, fontsize=7.5)
-
-    notes = []
-    if pooled:
-        short = ", ".join(ORG_SHORT_LABELS.get(g, g) for g in pooled)
-        notes.append(f"Pooled into Other (n < {min_group_n}): {short}.")
-    if n_missing_group:
-        notes.append(f"{n_missing_group} respondent(s) left the organisation "
-                     f"question blank and are excluded.")
-    if notes:
-        _caption_below(fig, legend, "  ".join(notes), fontsize=7.5,
-                       color=INK_MUTED)
-    return save_figure(fig, stem, figure_dir)
-
-
-# ---------------------------------------------------------------------------
 # Convenience driver
 # ---------------------------------------------------------------------------
 
@@ -945,15 +729,8 @@ FIGURE_STEMS: Sequence[str] = (
     "fig2_domain_scores_weights",
     "fig3_indicator_heatmap",
     "fig4_implementation_gap",
-    "fig5_delphi_consensus",
+    "fig5_delphi_ratings",
     "fig6_sensitivity_scatter",
-)
-
-#: The survey figures are kept separate from the six core manuscript figures
-#: because they require survey data, which the index itself does not.
-SURVEY_FIGURE_STEMS: Sequence[str] = (
-    "fig7_survey_likert",
-    "fig8_survey_by_group",
 )
 
 
@@ -980,7 +757,8 @@ def make_all_figures(scoring_result: dict,
     out[FIGURE_STEMS[1]] = fig_domain_scores(domains, figure_dir)
     out[FIGURE_STEMS[2]] = fig_indicator_heatmap(scoring_result["indicators"], figure_dir)
     out[FIGURE_STEMS[3]] = fig_implementation_gap(scoring_result["indicators"], figure_dir)
-    out[FIGURE_STEMS[4]] = fig_delphi_consensus(delphi_result["long"], figure_dir)
+    out[FIGURE_STEMS[4]] = fig_delphi_ratings(
+        delphi_result["per_indicator"], figure_dir)
     out[FIGURE_STEMS[5]] = fig_sensitivity_scatter(
         sensitivity_result["domains"],
         sensitivity_result["spearman"]["rho"],

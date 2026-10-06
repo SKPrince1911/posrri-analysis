@@ -1,19 +1,21 @@
 """
 synthetic/generate_synthetic.py -- reproducible synthetic POSRRI dataset.
 
-Generates a complete, schema-matching demonstration dataset so that the whole
-pipeline (Delphi -> AHP -> scoring -> sensitivity -> figures) can be executed,
-reviewed and unit-tested without touching real participant data.
+Generates a schema-matching dataset so the pipeline code can be smoke-tested
+without touching the study data.
+
+THIS IS NOT STUDY DATA. It exists to exercise the code paths, nothing else.
+Never use it to produce a reported result or to validate the analysis: the
+numbers are invented. The pipeline reads the study data from ``data/raw``.
 
 Design goals
 ------------
 * **Deterministic.** One master seed (``config.RANDOM_SEED``) is split into
   independent ``SeedSequence`` children, one per dataset, so adding or
   reordering a dataset never changes the others.
-* **Exercises the analysis logic.** Delphi relevance is generated from three
-  latent indicator classes (strong / borderline / weak) so that the consensus
-  rule, the I-CVI retention cut-off and the round-1 vs round-2 Cohen's kappa
-  all have something to bite on.
+* **Exercises the analysis logic.** Expert ratings are generated for a small
+  panel with a minority of contested indicators, so the all-experts-agree rule
+  has something to separate.
 * **Realistic AHP.** Pairwise judgements are built from a hidden "true"
   priority vector, perturbed with mild multiplicative noise and snapped to the
   Saaty scale, then rejection-sampled so every expert matrix is near-consistent
@@ -45,31 +47,13 @@ if str(_ROOT) not in sys.path:
 import config  # noqa: E402
 from src import structure as st  # noqa: E402
 from src.ahp import consistency_ratio, priority_weights  # noqa: E402
-from src.survey_ingest import (AGREEMENT, ORG_CATEGORIES,  # noqa: E402
-                               load_survey_export)
-
-#: code -> agreement label, inverted from the ingest's own mapping so the
-#: synthetic export can never disagree with what the ingest accepts.
-#: The live form's wording for each point: the FIRST label listed for each
-#: code in AGREEMENT, so the midpoint renders as "Neutral" rather than the
-#: accepted alias.
-AGREEMENT_LABELS = {}
-for _label, _code in AGREEMENT.items():
-    AGREEMENT_LABELS.setdefault(int(_code), _label)
 
 # ---------------------------------------------------------------------------
 # Panel sizes
 # ---------------------------------------------------------------------------
 
-N_DELPHI_EXPERTS = 18
+N_DELPHI_EXPERTS = 5
 N_AHP_EXPERTS = 8
-N_SURVEY_RESPONDENTS = 50          # respondents who consent, i.e. analysed
-N_SURVEY_NONCONSENT = 3            # rows the consent filter must drop
-N_SURVEY_ITEMS = 15
-
-#: The seven five-point Likert items, in questionnaire order.
-LIKERT_POSITIONS = ["q1", "q3", "q4", "q5", "q8", "q9", "q10"]
-
 #: Admissible Saaty judgements as (value, label) pairs, reciprocals included.
 SAATY_CHOICES: List[tuple] = (
     [(1.0 / k, f"1/{k}") for k in range(9, 1, -1)]
@@ -80,90 +64,44 @@ _SAATY_LABELS = [lab for _, lab in SAATY_CHOICES]
 
 
 # ---------------------------------------------------------------------------
-# 1. Delphi ratings
+# 1. Expert review ratings
 # ---------------------------------------------------------------------------
 
-#: Latent quality classes. ``p_high`` is the probability that an expert rates
-#: the indicator 7-9 in round 1 (i.e. the expected I-CVI).
-_DELPHI_CLASSES = {
-    "strong":     dict(p_high=0.94, clarity=4.4, feasibility=4.2),
-    "borderline": dict(p_high=0.76, clarity=3.6, feasibility=3.4),
-    "weak":       dict(p_high=0.48, clarity=2.9, feasibility=2.8),
-}
-
-
-def _assign_delphi_classes(rng: np.random.Generator) -> Dict[str, str]:
-    """Give every indicator a latent quality class.
-
-    Roughly 72% strong, 16% borderline, 12% weak: enough weak indicators to
-    fail the I-CVI cut-off and enough borderline ones to change decision
-    between rounds, which is what makes Cohen's kappa informative.
-    """
-    n = st.N_INDICATORS
-    labels = np.array(["strong"] * n, dtype=object)
-    idx = rng.permutation(n)
-    labels[idx[:6]] = "weak"
-    labels[idx[6:14]] = "borderline"
-    return dict(zip(st.INDICATORS, labels))
-
-
-def _round2_p_high(p1: float, rng: np.random.Generator) -> float:
-    """Round-2 probability of a 7-9 rating.
-
-    Delphi feedback polarises opinion: panels that already agree converge
-    further, panels that are split drift either way. Borderline indicators
-    therefore flip retain/drop between rounds, which is exactly the behaviour
-    the kappa statistic is meant to quantify.
-    """
-    if p1 >= 0.85:
-        drift = rng.normal(0.04, 0.03)
-    elif p1 <= 0.60:
-        drift = rng.normal(-0.06, 0.05)
-    else:
-        drift = rng.normal(0.0, 0.10)          # genuinely undecided
-    return float(np.clip(p1 + drift, 0.05, 0.99))
-
-
 def generate_delphi(rng: np.random.Generator) -> pd.DataFrame:
-    """18 experts x 50 indicators x 2 rounds of relevance/clarity/feasibility."""
-    experts = [f"E{i:02d}" for i in range(1, N_DELPHI_EXPERTS + 1)]
-    classes = _assign_delphi_classes(rng)
+    """A small expert panel rating every indicator once.
 
-    # Per-expert leniency: some raters are systematically generous.
-    leniency = rng.normal(0.0, 0.35, size=len(experts))
+    Shaped like the real review: a handful of experts, a single round, and most
+    indicators unanimous with a minority drawing one or two dissenting ratings,
+    so the all-experts-agree rule has something to separate.
+    """
+    experts = [f"E{i:02d}" for i in range(1, N_DELPHI_EXPERTS + 1)]
+
+    # Most indicators are endorsed by everyone; some draw a dissent.
+    n = st.N_INDICATORS
+    contested = set(rng.choice(n, size=max(1, n // 6), replace=False).tolist())
 
     rows = []
-    for ind in st.INDICATORS:
-        params = _DELPHI_CLASSES[classes[ind]]
-        p_by_round = {1: params["p_high"], 2: _round2_p_high(params["p_high"], rng)}
+    for k, ind in enumerate(st.INDICATORS):
+        dissenters = set()
+        if k in contested:
+            n_dissent = int(rng.integers(1, 3))
+            dissenters = set(rng.choice(len(experts), size=n_dissent,
+                                        replace=False).tolist())
+        for e, expert in enumerate(experts):
+            if e in dissenters:
+                relevance = int(np.clip(round(rng.normal(5.0, 1.0)), 1, 6))
+            else:
+                relevance = int(np.clip(round(rng.normal(8.2, 0.7)), 7, 9))
+            rows.append({
+                "expert_id": expert,
+                "indicator_code": ind,
+                "relevance": relevance,
+                "clarity": int(np.clip(round(rng.normal(4.2, 0.7)), 1, 5)),
+                "feasibility": int(np.clip(round(rng.normal(4.0, 0.8)), 1, 5)),
+            })
 
-        for rnd in config.DELPHI_ROUNDS:
-            p_high = p_by_round[rnd]
-            # Round 2 dispersion is tighter (feedback narrows the IQR).
-            spread = 1.0 if rnd == 1 else 0.7
-            for e, expert in enumerate(experts):
-                p_e = float(np.clip(p_high + 0.05 * leniency[e], 0.02, 0.99))
-                if rng.random() < p_e:
-                    relevance = int(np.clip(round(rng.normal(8.1, 0.8 * spread)), 7, 9))
-                else:
-                    relevance = int(np.clip(round(rng.normal(4.6, 1.4 * spread)), 1, 6))
-
-                clarity = int(np.clip(
-                    round(rng.normal(params["clarity"] + 0.2 * leniency[e], 0.7)), 1, 5))
-                feasibility = int(np.clip(
-                    round(rng.normal(params["feasibility"] + 0.2 * leniency[e], 0.8)), 1, 5))
-
-                rows.append({
-                    "expert_id": expert,
-                    "round": rnd,
-                    "indicator_code": ind,
-                    "relevance": relevance,
-                    "clarity": clarity,
-                    "feasibility": feasibility,
-                })
-
-    frame = pd.DataFrame(rows)
-    return frame.sort_values(["round", "expert_id", "indicator_code"]).reset_index(drop=True)
+    return pd.DataFrame(rows).sort_values(
+        ["expert_id", "indicator_code"]).reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
@@ -324,194 +262,7 @@ def generate_scores(rng: np.random.Generator) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# 4. Stakeholder survey
-# ---------------------------------------------------------------------------
-
-#: Question wording as it would appear in the Google Form. The ingest matches
-#: items BY POSITION, so these strings exist only to make the synthetic export
-#: realistic -- editing any of them must not change the ingested result.
-#: The seven agreement items are worded as declarative statements, because
-#: that is what an agree/disagree response scale requires: a respondent agrees
-#: or disagrees with a proposition, not with a question. The remaining items
-#: keep their interrogative form, since they are answered on Yes/Unsure/No,
-#: frequency, experience-band or free-text scales rather than on agreement.
-SURVEY_HEADERS = [
-    "Timestamp",
-    "Do you consent to take part in this study? Responses are anonymised and "
-    "used only for academic research.",                                # Q0 consent
-    "I am confident the port oil spill contingency plan would work in a real "
-    "Tier 2 spill.",                                                   # q1  agreement
-    "Are you aware of a designated On-Scene Commander for oil spill response "
-    "at this port?",                                                   # q2  Yes/Unsure/No
-    "My own roles and responsibilities during a spill response are clear to me.",
-                                                                       # q3  agreement
-    "The oil spill response equipment currently available at this port is "
-    "adequate.",                                                       # q4  agreement
-    "Coordination between agencies during a spill response is effective.",
-                                                                       # q5  agreement
-    "Have you been given access to the port oil spill contingency plan?",
-                                                                       # q6  Yes/Unsure/No
-    "How often does your organisation take part in oil spill response exercises?",
-                                                                       # q7  frequency
-    "I am confident in the notification and reporting chain for a reported "
-    "spill.",                                                          # q8  agreement
-    "The funding available for oil spill preparedness at this port is adequate.",
-                                                                       # q9  agreement
-    "Lessons from incidents and exercises are acted upon.",            # q10 agreement
-    "In your view, what is the single greatest barrier to oil spill "
-    "preparedness at this port?",                                      # q11 text
-    "Which of the following best describes your organisation?",        # q12 org type
-    "How many years have you worked in port operations, shipping or "
-    "environmental regulation?",                                       # q13 bands
-    "Have you received formal oil spill response training (e.g. IMO OPRC Level "
-    "1, 2 or 3)?",                                                     # q14 Yes/No
-    "Any further comments on oil spill preparedness at this port?",    # q15 text
-]
-
-_BARRIERS = [
-    "Equipment is not maintained", "No dedicated budget",
-    "Unclear lines of authority", "Too few trained staff",
-    "Plan is out of date", "Agencies do not exercise together", "",
-]
-#: Free-text answers typed into the form's "Other" box on q12. These must NOT
-#: match any listed category, so that the fall-through to "Other" is exercised
-#: by the committed data rather than merely reachable.
-_ORG_OTHER_TYPED = [
-    "Freelance marine surveyor",
-    "University researcher",
-    "Customs broker",
-    "Fisheries cooperative",
-]
-
-_FURTHER_COMMENTS = [
-    "Exercises need to involve the terminals", "More boom stock is essential",
-    "Training budget has not increased in years", "Plan should be public",
-    "Response times must be logged", "", "",
-]
-
-
-def generate_survey_export(rng: np.random.Generator) -> pd.DataFrame:
-    """A synthetic *raw Google Forms export*, before any cleaning.
-
-    Deliberately messy in the ways a real export is, so that
-    :func:`src.survey_ingest.load_survey_export` is exercised rather than
-    merely called: it carries a Timestamp column and a Q0 consent question,
-    rows in submission order rather than sorted, non-consenting rows that must
-    be dropped, category labels rather than codes, "Don't know" answers that
-    must become missing, blank free-text answers, and a handful of labels
-    carrying the curly apostrophes and en-dashes Google Sheets substitutes.
-
-    The seven Likert confidence items load on a shared respondent factor, so
-    the Cronbach's alpha reported by ``src.survey_analysis`` is meaningful
-    rather than an artefact of independent noise. The loading (0.62) and
-    residual SD (0.65) are calibrated to put alpha in the low-to-mid 0.8s --
-    the range a well-behaved scale actually occupies. A stronger loading gave
-    alpha > 0.95, which in a real study signals redundant items rather than a
-    good scale, and would have been a misleading demonstration.
-    """
-    n = N_SURVEY_RESPONDENTS + N_SURVEY_NONCONSENT
-
-    # Shared respondent factor plus per-item difficulty for the Likert items.
-    theta = rng.normal(0.0, 1.0, size=n)
-    item_effect = rng.normal(0.0, 0.40, size=len(LIKERT_POSITIONS))
-
-    # Submission times over roughly six weeks, then shuffled so the ingest has
-    # to sort them: respondent_id must follow timestamp order, not file order.
-    minutes = np.sort(rng.integers(0, 60 * 24 * 42, size=n))
-    minutes = rng.permutation(minutes)
-    base = np.datetime64("2026-03-02T08:00:00")
-
-    # The seven Likert items were switched from a Forms linear scale to
-    # multiple choice partway through collection, so early submissions carry
-    # bare numbers and later ones carry agreement labels. The cut is taken
-    # from the timestamps, and the surface variants below are chosen by row
-    # index -- neither draws from the generator, so the underlying values (and
-    # therefore every downstream result) are unaffected by this formatting.
-    switch_at = float(np.quantile(minutes, 0.30))
-    _VARIANTS = [lambda t: t, lambda t: t.upper(), lambda t: f"  {t} ",
-                 lambda t: t.lower(), lambda t: t, lambda t: f"{t}  ",
-                 lambda t: t.capitalize()]
-
-    consent = np.array(["Yes, I consent"] * n, dtype=object)
-    consent[rng.choice(n, size=N_SURVEY_NONCONSENT, replace=False)] = \
-        "No, I do not consent"
-
-    rows = []
-    for i in range(n):
-        stamp = base + np.timedelta64(int(minutes[i]), "m")
-        # Google Forms' default US locale format.
-        ts = pd.Timestamp(stamp).strftime("%-m/%-d/%Y %-H:%M:%S")
-
-        likert = {}
-        for k, item in enumerate(LIKERT_POSITIONS):
-            val = 3.0 + 0.62 * theta[i] + item_effect[k] + rng.normal(0, 0.65)
-            code = int(np.clip(round(val), 1, 5))
-            if minutes[i] > switch_at:              # multiple choice (text)
-                label = AGREEMENT_LABELS[code]
-                likert[item] = _VARIANTS[(i + k) % len(_VARIANTS)](label)
-            else:                                   # legacy linear scale
-                likert[item] = str(code)
-
-        # Awareness tracks confidence, so the coded items are not independent
-        # of the Likert block -- as in real data.
-        aware = "Yes" if theta[i] > 0.25 else ("Unsure" if theta[i] > -0.7 else "No")
-        access = "Yes" if theta[i] > 0.55 else ("Unsure" if theta[i] > -0.4 else "No")
-
-        freq_roll = rng.random()
-        if freq_roll < 0.10:
-            # Curly apostrophe for some rows: Sheets substitutes it silently.
-            frequency = "Don\u2019t know" if rng.random() < 0.5 else "Don't know"
-        else:
-            frequency = str(rng.choice(["Never", "Rarely", "Sometimes", "Often"],
-                                       p=[0.30, 0.34, 0.26, 0.10]))
-
-        # Organisation type: mostly listed options, a few typed into "Other",
-        # and one left blank so the missing-vs-Other distinction is exercised.
-        org_roll = rng.random()
-        if org_roll < 0.12:
-            organisation = _ORG_OTHER_TYPED[
-                int(rng.integers(len(_ORG_OTHER_TYPED)))]
-        elif org_roll < 0.18:
-            organisation = ""
-        else:
-            organisation = str(rng.choice(
-                ORG_CATEGORIES,
-                # "Master or ship's officer" is deliberately rare, so the
-                # figure's n < 3 pooling rule is exercised by this dataset.
-                p=[0.26, 0.10, 0.18, 0.18, 0.14, 0.04, 0.10]))
-            if rng.random() < 0.18:                 # casing/padding drift
-                organisation = f"  {organisation.upper()} "
-
-        band = str(rng.choice(["Less than 5 years", "5 to 10 years",
-                               "11 to 20 years", "More than 20 years"],
-                              p=[0.16, 0.32, 0.30, 0.22]))
-
-        rows.append({
-            SURVEY_HEADERS[0]: ts,
-            SURVEY_HEADERS[1]: consent[i],
-            SURVEY_HEADERS[2]: likert["q1"],
-            SURVEY_HEADERS[3]: aware,
-            SURVEY_HEADERS[4]: likert["q3"],
-            SURVEY_HEADERS[5]: likert["q4"],
-            SURVEY_HEADERS[6]: likert["q5"],
-            SURVEY_HEADERS[7]: access,
-            SURVEY_HEADERS[8]: frequency,
-            SURVEY_HEADERS[9]: likert["q8"],
-            SURVEY_HEADERS[10]: likert["q9"],
-            SURVEY_HEADERS[11]: likert["q10"],
-            SURVEY_HEADERS[12]: _BARRIERS[int(rng.integers(len(_BARRIERS)))],
-            SURVEY_HEADERS[13]: organisation,
-            SURVEY_HEADERS[14]: band,
-            SURVEY_HEADERS[15]: "Yes" if theta[i] > -0.15 else "No",
-            SURVEY_HEADERS[16]:
-                _FURTHER_COMMENTS[int(rng.integers(len(_FURTHER_COMMENTS)))],
-        })
-
-    return pd.DataFrame(rows, columns=SURVEY_HEADERS)
-
-
-# ---------------------------------------------------------------------------
-# 5. Benchmark ports
+# 4. Benchmark ports
 # ---------------------------------------------------------------------------
 
 #: Illustrative comparator profiles: overall level plus per-domain dispersion.
@@ -555,21 +306,19 @@ def generate_all(seed: int = config.RANDOM_SEED,
 
     # Independent streams: changing one dataset cannot perturb the others.
     streams = np.random.SeedSequence(seed).spawn(5)
-    rng_delphi, rng_ahp, rng_scores, rng_survey, rng_bench = (
+    rng_delphi, rng_ahp, rng_scores, _reserved, rng_bench = (
         np.random.default_rng(s) for s in streams
     )
 
     delphi = generate_delphi(rng_delphi)
     ahp = generate_ahp(rng_ahp)
     scores = generate_scores(rng_scores)
-    survey_export = generate_survey_export(rng_survey)
     benchmark = generate_benchmark(scores, rng_bench)
 
     frames = {
         "delphi_ratings": delphi,
         "ahp_pairwise": ahp,
         "scores": scores,
-        "survey_export": survey_export,
         "benchmark": benchmark,
     }
 
@@ -582,16 +331,6 @@ def generate_all(seed: int = config.RANDOM_SEED,
         path = outdir / f"{name}.csv"
         frame.to_csv(path, index=False)
         _report(path, frame)
-
-    # survey.csv is not generated directly: it is produced by running the real
-    # ingest over the synthetic raw export. That keeps one source of truth for
-    # the survey coding, and means the committed demonstration file is
-    # schema-valid by construction rather than by a parallel implementation
-    # that could drift from src/survey_ingest.py.
-    survey = load_survey_export(outdir / "survey_export.csv", data_dir=outdir,
-                                write=True, verbose=False)
-    frames["survey"] = survey
-    _report(outdir / "survey.csv", survey)
 
     return frames
 
@@ -610,19 +349,14 @@ def _cli() -> None:
     print("\nSanity summary")
     print("-" * 60)
     d = frames["delphi_ratings"]
-    print(f"Delphi      : {d['expert_id'].nunique()} experts, "
-          f"{d['indicator_code'].nunique()} indicators, "
-          f"rounds {sorted(int(r) for r in d['round'].unique())}")
+    print(f"Expert review: {d['expert_id'].nunique()} experts x "
+          f"{d['indicator_code'].nunique()} indicators")
     a = frames["ahp_pairwise"]
     print(f"AHP         : {a['expert_id'].nunique()} experts, "
           f"{a.groupby(['level', 'group']).ngroups} matrices per expert")
     s = frames["scores"]
     print(f"Scores      : mean final={s['final_score'].mean():.2f}, "
           f"mean doc-field gap={(s['doc_score'] - s['field_score']).mean():+.2f}")
-    e, sv = frames["survey_export"], frames["survey"]
-    print(f"Survey      : {len(e)} raw rows -> {len(sv)} consenting respondents "
-          f"x {N_SURVEY_ITEMS} items "
-          f"({len(e) - len(sv)} dropped on consent)")
     b = frames["benchmark"]
     print(f"Benchmark   : {b['port'].nunique()} ports x {b['domain_code'].nunique()} domains")
 

@@ -1,41 +1,35 @@
 """
-src/delphi.py -- Delphi consensus and content-validity analysis for POSRRI.
+src/delphi.py -- Delphi expert review of the candidate indicators.
 
-For every one of the 50 candidate indicators, and separately for each Delphi
-round, the module computes:
+This panel is small -- a handful of experts, not a survey panel -- so the
+analysis is deliberately austere. With four or five raters, a "percentage in
+agreement" is a proportion of four or five: 80% and 75% are the same two
+people, and a chance-corrected statistic (Cohen's or Fleiss' kappa) estimated
+on that many raters has a confidence interval wide enough to be uninformative.
+Reporting either would dress up a judgement as a measurement.
 
-* **median relevance** and the **interquartile range (IQR)** of the panel's
-  1-9 relevance ratings;
-* the **percentage of experts rating 7-9** (the "relevant" band);
-* a **consensus flag**, defined by the study protocol as
+What is reported instead:
 
-      consensus = (>= 80% of experts rate 7-9)  OR  (median >= 7 AND IQR <= 2)
+* **every expert's rating for every indicator**, in full, so a reader can see
+  the raw judgements rather than a summary of them;
+* the **range** across experts (minimum, median, maximum) per indicator;
+* the **all-experts-agree rule**: an indicator is retained when *every* expert
+  rates its relevance in the agreed band (>= ``config.RELEVANCE_HIGH_MIN``).
+  One dissenting expert is enough to flag an indicator for discussion. With a
+  panel this size that is the only defensible decision rule: it needs no
+  threshold tuned to the panel's size, and it cannot be moved by rounding.
 
-  i.e. either strong majority endorsement or a high and tightly clustered
-  central tendency;
-* the **item-level content validity index (I-CVI)** = proportion of experts
-  rating 7-9. Items with I-CVI >= 0.78 are retained (Zamanzadeh et al. 2015;
-  the 0.78 cut-off is the conventional value for panels of six or more);
-* the **modified kappa** ``k* = (I-CVI - Pc) / (1 - Pc)`` where ``Pc`` is the
-  probability of chance agreement, which corrects I-CVI for chance inflation
-  (Zamanzadeh et al. 2015);
-* the **scale-level content validity index**, averaging method,
-  ``S-CVI/Ave = mean(I-CVI)``, reported against a target of >= 0.90, together
-  with ``S-CVI/UA`` (universal agreement) for completeness.
+Indicators that are not unanimous are listed separately, with the dissenting
+experts named, because those are the ones the panel has to talk about.
 
-Stability across rounds is quantified by **Cohen's kappa** between the round-1
-and round-2 retain/drop decisions (Hohmann et al. 2025 recommend reporting
-both a consensus criterion and a stability criterion for Delphi studies).
-
-Run ``python src/delphi.py`` to execute against the synthetic dataset.
+Run ``python src/delphi.py`` to execute against the configured data directory.
 """
 
 from __future__ import annotations
 
 import sys
-from math import comb
 from pathlib import Path
-from typing import Dict, Sequence
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -47,9 +41,11 @@ if str(_ROOT) not in sys.path:
 import config  # noqa: E402
 from src import structure as st  # noqa: E402
 
-REQUIRED_COLUMNS = [
-    "expert_id", "round", "indicator_code", "relevance", "clarity", "feasibility",
-]
+REQUIRED_COLUMNS = ["expert_id", "indicator_code", "relevance"]
+
+#: Columns used when present, but not required: a single-round review has no
+#: ``round`` column, and some panels do not rate clarity or feasibility.
+OPTIONAL_COLUMNS = ["round", "clarity", "feasibility"]
 
 
 # ---------------------------------------------------------------------------
@@ -62,15 +58,19 @@ def validate_delphi_frame(df: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(
             f"delphi_ratings data is missing column(s) {missing}; "
-            f"expected {REQUIRED_COLUMNS}"
+            f"required {REQUIRED_COLUMNS}, optional {OPTIONAL_COLUMNS}"
         )
 
     out = df.copy()
     out["expert_id"] = out["expert_id"].astype(str).str.strip()
     out["indicator_code"] = out["indicator_code"].astype(str).str.strip()
-    out["round"] = pd.to_numeric(out["round"], errors="raise").astype(int)
-    for col in ("relevance", "clarity", "feasibility"):
-        out[col] = pd.to_numeric(out[col], errors="coerce")
+    out["relevance"] = pd.to_numeric(out["relevance"], errors="coerce")
+
+    if "round" in out.columns:
+        out["round"] = pd.to_numeric(out["round"], errors="raise").astype(int)
+    for col in ("clarity", "feasibility"):
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
 
     unknown = sorted(set(out["indicator_code"]) - set(st.INDICATORS))
     if unknown:
@@ -79,135 +79,99 @@ def validate_delphi_frame(df: pd.DataFrame) -> pd.DataFrame:
             f"e.g. {unknown[:5]}"
         )
 
-    for col, (lo, hi) in (("relevance", config.RELEVANCE_SCALE),
-                          ("clarity", config.CLARITY_SCALE),
-                          ("feasibility", config.FEASIBILITY_SCALE)):
+    checks = [("relevance", config.RELEVANCE_SCALE)]
+    if "clarity" in out.columns:
+        checks.append(("clarity", config.CLARITY_SCALE))
+    if "feasibility" in out.columns:
+        checks.append(("feasibility", config.FEASIBILITY_SCALE))
+    for col, (lo, hi) in checks:
         bad = out[col].dropna()
         bad = bad[(bad < lo) | (bad > hi)]
         if len(bad):
             raise ValueError(
-                f"{len(bad)} {col} rating(s) outside the {lo}-{hi} scale"
+                f"{len(bad)} {col} rating(s) outside the {lo}-{hi} scale: "
+                f"{sorted(set(bad.tolist()))[:5]}"
             )
 
     if out["relevance"].isna().any():
         n_na = int(out["relevance"].isna().sum())
-        raise ValueError(f"{n_na} missing relevance rating(s); these must be resolved "
-                         f"or the rows removed before analysis")
+        raise ValueError(
+            f"{n_na} missing relevance rating(s). With a panel this small every "
+            f"rating matters to the unanimity rule, so these must be resolved "
+            f"rather than dropped."
+        )
+
+    duplicated = out.duplicated(subset=[c for c in ("expert_id", "round", "indicator_code")
+                                        if c in out.columns])
+    if duplicated.any():
+        rows = out[duplicated].head(3)[["expert_id", "indicator_code"]]
+        raise ValueError(
+            f"{int(duplicated.sum())} duplicate expert/indicator rating(s), "
+            f"e.g.\n{rows.to_string(index=False)}"
+        )
     return out
 
 
 # ---------------------------------------------------------------------------
-# Statistics
+# Per-indicator ratings
 # ---------------------------------------------------------------------------
 
-def chance_agreement(n_experts: int, n_agreeing: int) -> float:
-    """Probability of chance agreement ``Pc`` for the modified kappa.
+def ratings_matrix(df: pd.DataFrame, value: str = "relevance") -> pd.DataFrame:
+    """Indicators x experts matrix of raw ratings.
 
-    ``Pc = [N! / (A! (N - A)!)] * 0.5^N`` (Zamanzadeh et al. 2015), i.e. the
-    binomial probability of exactly ``A`` of ``N`` raters endorsing an item by
-    chance when endorsement is a coin flip.
+    One row per indicator in canonical order, one column per expert. This is
+    the full record of what the panel said; everything else in this module is
+    derived from it.
     """
-    return comb(int(n_experts), int(n_agreeing)) * (0.5 ** int(n_experts))
+    wide = (df.pivot_table(index="indicator_code", columns="expert_id",
+                           values=value, aggfunc="last")
+              .reindex([c for c in st.INDICATORS if c in set(df["indicator_code"])]))
+    wide.columns.name = None
+    wide.index.name = "indicator_code"
+    return wide
 
 
-def modified_kappa(icvi: float, n_experts: int, n_agreeing: int) -> float:
-    """Chance-corrected content validity, ``k* = (I-CVI - Pc) / (1 - Pc)``."""
-    pc = chance_agreement(n_experts, n_agreeing)
-    if pc >= 1.0:
-        return float("nan")
-    return (icvi - pc) / (1.0 - pc)
+def indicator_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Per-indicator summary: every rating, the range, and the agreement flag.
 
-
-def kappa_evaluation(kappa_star: float) -> str:
-    """Conventional qualitative bands for the modified kappa."""
-    if not np.isfinite(kappa_star):
-        return "undefined"
-    if kappa_star > 0.74:
-        return "excellent"
-    if kappa_star >= 0.60:
-        return "good"
-    if kappa_star >= 0.40:
-        return "fair"
-    return "poor"
-
-
-def cohens_kappa(labels_a: Sequence, labels_b: Sequence) -> Dict[str, float]:
-    """Cohen's kappa for two nominal labellings of the same items.
-
-    Returns ``kappa``, observed agreement ``po``, expected agreement ``pe`` and
-    ``n``. When one rater uses a single category for every item, ``pe`` can
-    equal 1 and kappa is mathematically undefined; ``nan`` is returned in that
-    case and ``po`` is still reported, rather than raising.
+    Columns: the hierarchy, one column per expert, then ``n_experts``,
+    ``min_relevance``, ``median_relevance``, ``max_relevance``,
+    ``n_below_threshold``, ``dissenting_experts``, ``all_experts_agree`` and
+    ``decision``.
     """
-    a = np.asarray(list(labels_a))
-    b = np.asarray(list(labels_b))
-    if a.shape != b.shape:
-        raise ValueError(f"label vectors differ in length: {a.shape} vs {b.shape}")
-    n = a.size
-    if n == 0:
-        raise ValueError("cannot compute kappa on an empty set of items")
+    wide = ratings_matrix(df)
+    experts = list(wide.columns)
+    threshold = config.RELEVANCE_HIGH_MIN
 
-    categories = sorted(set(a.tolist()) | set(b.tolist()), key=str)
-    idx = {c: k for k, c in enumerate(categories)}
-    table = np.zeros((len(categories), len(categories)), dtype=float)
-    for x, y in zip(a, b):
-        table[idx[x], idx[y]] += 1.0
+    frame = st.structure_frame()[
+        ["indicator_code", "indicator_name", "domain_code", "domain_name",
+         "pillar_code"]
+    ].copy()
+    frame = frame.merge(wide, left_on="indicator_code", right_index=True,
+                        how="left")
 
-    po = float(np.trace(table) / n)
-    pe = float((table.sum(axis=0) * table.sum(axis=1)).sum() / (n * n))
-    kappa = float("nan") if np.isclose(pe, 1.0) else (po - pe) / (1.0 - pe)
+    values = frame[experts].to_numpy(dtype=float)
+    below = values < threshold
 
-    return {
-        "kappa": float(kappa),
-        "po": po,
-        "pe": pe,
-        "n": int(n),
-        "categories": categories,
-        "table": pd.DataFrame(table, index=categories, columns=categories, dtype=int),
-    }
+    frame["n_experts"] = np.sum(~np.isnan(values), axis=1).astype(int)
+    frame["min_relevance"] = np.nanmin(values, axis=1)
+    frame["median_relevance"] = np.nanmedian(values, axis=1)
+    frame["max_relevance"] = np.nanmax(values, axis=1)
+    frame["n_below_threshold"] = np.nansum(below, axis=1).astype(int)
+    frame["dissenting_experts"] = [
+        ", ".join(e for e, flag in zip(experts, row) if flag) or ""
+        for row in below
+    ]
+    # The rule: every expert rates the indicator at or above the threshold.
+    frame["all_experts_agree"] = frame["n_below_threshold"].eq(0)
+    frame["decision"] = np.where(frame["all_experts_agree"], "RETAIN", "DISCUSS")
 
+    for col in ("clarity", "feasibility"):
+        if col in df.columns:
+            means = df.groupby("indicator_code")[col].mean()
+            frame[f"mean_{col}"] = frame["indicator_code"].map(means)
 
-def _round_stats(block: pd.DataFrame) -> pd.DataFrame:
-    """Per-indicator relevance statistics for a single Delphi round."""
-    rows = []
-    for ind, sub in block.groupby("indicator_code", sort=False):
-        rel = sub["relevance"].to_numpy(dtype=float)
-        n = rel.size
-        n_high = int((rel >= config.RELEVANCE_HIGH_MIN).sum())
-        icvi = n_high / n
-
-        q1, q3 = np.percentile(rel, [25, 75])
-        iqr = float(q3 - q1)
-        median = float(np.median(rel))
-
-        rule_pct = icvi >= config.CONSENSUS_PCT_THRESHOLD
-        rule_central = (median >= config.CONSENSUS_MEDIAN_MIN) and (iqr <= config.CONSENSUS_IQR_MAX)
-        k_star = modified_kappa(icvi, n, n_high)
-
-        rows.append({
-            "indicator_code": ind,
-            "n_experts": n,
-            "median_relevance": median,
-            "q1_relevance": float(q1),
-            "q3_relevance": float(q3),
-            "iqr_relevance": iqr,
-            "mean_relevance": float(rel.mean()),
-            "n_rating_7_9": n_high,
-            "pct_rating_7_9": 100.0 * icvi,
-            "I_CVI": icvi,
-            "kappa_star": k_star,
-            "kappa_evaluation": kappa_evaluation(k_star),
-            "consensus_rule_pct": bool(rule_pct),
-            "consensus_rule_median_iqr": bool(rule_central),
-            "consensus": bool(rule_pct or rule_central),
-            "retain": bool(icvi >= config.ICVI_RETAIN_THRESHOLD),
-            "mean_clarity": float(sub["clarity"].mean()),
-            "mean_feasibility": float(sub["feasibility"].mean()),
-        })
-
-    frame = pd.DataFrame(rows)
-    frame["_order"] = frame["indicator_code"].map({c: i for i, c in enumerate(st.INDICATORS)})
-    return frame.sort_values("_order").drop(columns="_order").reset_index(drop=True)
+    return frame
 
 
 # ---------------------------------------------------------------------------
@@ -215,118 +179,94 @@ def _round_stats(block: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def run_delphi(df: pd.DataFrame) -> Dict[str, object]:
-    """Full Delphi analysis.
+    """Full Delphi review.
 
     Returns a dict with:
 
-    ``long``          per indicator x round statistics (100 rows for 2 rounds);
-    ``per_indicator`` one row per indicator, round 1 and round 2 side by side,
-                      plus the final retain decision (taken from the last round);
-    ``retained``      the retained indicators as a tidy table;
-    ``dropped``       the indicators failing the I-CVI cut-off in the last round;
-    ``kappa``         Cohen's kappa between round-1 and round-2 decisions;
-    ``summary``       S-CVI/Ave and S-CVI/UA per round, counts and kappa.
+    ``ratings``       indicators x experts matrix of raw relevance ratings;
+    ``per_indicator`` the per-indicator table, including the agreement flag;
+    ``retained``      indicators every expert rated at or above the threshold;
+    ``to_discuss``    indicators with at least one dissenting expert;
+    ``summary``       panel size, counts, and the rule in force.
     """
     df = validate_delphi_frame(df)
 
-    rounds = sorted(df["round"].unique())
-    if not rounds:
-        raise ValueError("no Delphi rounds present in the data")
-
-    long_parts = []
-    for rnd in rounds:
-        part = _round_stats(df[df["round"] == rnd])
-        part.insert(1, "round", rnd)
-        long_parts.append(part)
-    long = pd.concat(long_parts, ignore_index=True)
-
-    # ---- wide, one row per indicator --------------------------------------
-    keep = ["median_relevance", "iqr_relevance", "pct_rating_7_9", "I_CVI",
-            "kappa_star", "kappa_evaluation", "consensus", "retain",
-            "mean_clarity", "mean_feasibility"]
-    wide = st.structure_frame()[
-        ["indicator_code", "indicator_name", "domain_code", "domain_name",
-         "pillar_code"]
-    ].copy()
-    for rnd in rounds:
-        part = long[long["round"] == rnd].set_index("indicator_code")[keep]
-        part = part.add_suffix(f"_r{rnd}")
-        wide = wide.merge(part, left_on="indicator_code", right_index=True, how="left")
-
-    last = rounds[-1]
-    wide["final_retain"] = wide[f"retain_r{last}"].astype(bool)
-    wide["final_consensus"] = wide[f"consensus_r{last}"].astype(bool)
-    wide["final_I_CVI"] = wide[f"I_CVI_r{last}"]
-    wide["decision"] = np.where(wide["final_retain"], "RETAIN", "DROP")
-
-    # ---- stability between rounds -----------------------------------------
-    if len(rounds) >= 2:
-        first, second = rounds[0], rounds[-1]
-        lab_a = wide[f"retain_r{first}"].map({True: "RETAIN", False: "DROP"})
-        lab_b = wide[f"retain_r{second}"].map({True: "RETAIN", False: "DROP"})
-        kappa = cohens_kappa(lab_a, lab_b)
-        kappa["rounds_compared"] = (int(first), int(second))
-        kappa["n_changed"] = int((lab_a.to_numpy() != lab_b.to_numpy()).sum())
+    rounds = sorted(df["round"].unique()) if "round" in df.columns else []
+    if rounds:
+        # Only the final round carries the panel's settled view; earlier rounds
+        # are kept in the ratings matrix for the record but do not decide.
+        final = df[df["round"] == rounds[-1]]
     else:
-        kappa = {"kappa": float("nan"), "po": float("nan"), "pe": float("nan"),
-                 "n": len(wide), "categories": [], "table": pd.DataFrame(),
-                 "rounds_compared": (rounds[0], rounds[0]), "n_changed": 0}
+        final = df
 
-    # ---- scale-level content validity -------------------------------------
+    ratings = ratings_matrix(final)
+    per_indicator = indicator_table(final)
+    experts = list(ratings.columns)
+
+    retained = per_indicator.loc[
+        per_indicator["all_experts_agree"],
+        ["indicator_code", "indicator_name", "domain_code", "domain_name",
+         "pillar_code", "min_relevance", "median_relevance"]
+    ].reset_index(drop=True)
+
+    to_discuss = per_indicator.loc[
+        ~per_indicator["all_experts_agree"],
+        ["indicator_code", "indicator_name", "domain_code",
+         "min_relevance", "median_relevance", "n_below_threshold",
+         "dissenting_experts"]
+    ].reset_index(drop=True)
+
     summary = {
-        "n_indicators": int(len(wide)),
-        "n_experts": int(df["expert_id"].nunique()),
+        "n_experts": len(experts),
+        "experts": experts,
         "rounds": [int(r) for r in rounds],
-        "icvi_retain_threshold": config.ICVI_RETAIN_THRESHOLD,
-        "scvi_target": config.SCVI_TARGET,
-        "cohens_kappa": float(kappa["kappa"]),
-        "kappa_po": float(kappa["po"]),
-        "kappa_pe": float(kappa["pe"]),
-        "n_decisions_changed": int(kappa["n_changed"]),
+        "deciding_round": int(rounds[-1]) if rounds else None,
+        "n_indicators": int(len(per_indicator)),
+        "relevance_threshold": config.RELEVANCE_HIGH_MIN,
+        "rule": (f"retain when all {len(experts)} experts rate relevance "
+                 f">= {config.RELEVANCE_HIGH_MIN}"),
+        "n_retained": int(per_indicator["all_experts_agree"].sum()),
+        "n_to_discuss": int((~per_indicator["all_experts_agree"]).sum()),
+        "min_rating_overall": float(per_indicator["min_relevance"].min()),
+        "n_unanimous_at_ceiling": int(
+            (per_indicator["min_relevance"] >= config.RELEVANCE_SCALE[1]).sum()),
     }
-    for rnd in rounds:
-        part = long[long["round"] == rnd]
-        summary[f"scvi_ave_r{rnd}"] = float(part["I_CVI"].mean())
-        summary[f"scvi_ua_r{rnd}"] = float((part["I_CVI"] >= 1.0).mean())
-        summary[f"n_consensus_r{rnd}"] = int(part["consensus"].sum())
-        summary[f"n_retained_r{rnd}"] = int(part["retain"].sum())
-    summary["scvi_ave_retained"] = float(
-        long[(long["round"] == last)
-             & (long["retain"])]["I_CVI"].mean()
-    )
-    summary["scvi_target_met"] = bool(summary[f"scvi_ave_r{last}"] >= config.SCVI_TARGET)
-
-    retained = wide.loc[wide["final_retain"],
-                        ["indicator_code", "indicator_name", "domain_code",
-                         "domain_name", "pillar_code", "final_I_CVI",
-                         f"median_relevance_r{last}", f"iqr_relevance_r{last}"]
-                        ].reset_index(drop=True)
-    dropped = wide.loc[~wide["final_retain"],
-                       ["indicator_code", "indicator_name", "domain_code",
-                        "final_I_CVI", f"median_relevance_r{last}"]
-                       ].reset_index(drop=True)
 
     return {
-        "long": long,
-        "per_indicator": wide,
+        "ratings": ratings.reset_index(),
+        "per_indicator": per_indicator,
         "retained": retained,
-        "dropped": dropped,
-        "kappa": kappa,
+        "to_discuss": to_discuss,
         "summary": summary,
     }
 
 
 if __name__ == "__main__":
-    data = pd.read_csv(config.SYNTHETIC_DATA_DIR / "delphi_ratings.csv")
+    paths = config.resolve_paths()
+    data = pd.read_csv(paths["data_dir"] / config.DATA_FILES["delphi"])
     res = run_delphi(data)
     s = res["summary"]
-    print("Delphi summary")
-    print("-" * 60)
-    for k, v in s.items():
-        print(f"  {k:<26} {v}")
-    print(f"\nRetained {len(res['retained'])} of {s['n_indicators']} indicators; "
-          f"dropped {len(res['dropped'])}.")
-    print("\nDropped indicators:")
-    print(res["dropped"].to_string(index=False))
-    print("\nRound-1 vs round-2 decision table:")
-    print(res["kappa"]["table"].to_string())
+
+    print("Delphi expert review")
+    print("-" * 72)
+    print(f"  Experts                    {s['n_experts']}  ({', '.join(s['experts'])})")
+    if s["rounds"]:
+        print(f"  Rounds                     {s['rounds']} "
+              f"(round {s['deciding_round']} decides)")
+    print(f"  Indicators reviewed        {s['n_indicators']}")
+    print(f"  Rule                       {s['rule']}")
+    print(f"  Retained (all agree)       {s['n_retained']}")
+    print(f"  Flagged for discussion     {s['n_to_discuss']}")
+
+    print("\nPer-indicator ratings (every expert, final round)")
+    print(res["per_indicator"][
+        ["indicator_name"] + list(res["ratings"].columns[1:])
+        + ["min_relevance", "all_experts_agree"]
+    ].to_string(index=False))
+
+    if len(res["to_discuss"]):
+        print("\nIndicators without unanimous agreement")
+        print(res["to_discuss"][
+            ["indicator_name", "min_relevance", "n_below_threshold",
+             "dissenting_experts"]
+        ].to_string(index=False))

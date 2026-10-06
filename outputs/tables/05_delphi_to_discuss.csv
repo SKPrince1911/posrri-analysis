@@ -1,0 +1,9 @@
+indicator_code,indicator_name,domain_code,min_relevance,median_relevance,n_below_threshold,dissenting_experts
+D3.1,Single 24/7 point of contact for spill notification,D3,5.0,7.0,2,"E02, E04"
+D4.1,Tier 1/2/3 definitions adopted with quantitative activation triggers,D4,5.0,8.0,1,E01
+D4.2,Tier 2 regional and mutual-aid agreements formally concluded,D4,5.0,8.0,2,"E02, E04"
+D5.2,Mechanical recovery (skimmer) capacity against the design scenario,D5,4.0,8.0,1,E02
+D6.2,"Annual exercise programme (notification, tabletop, deployment)",D6,5.0,8.0,1,E05
+D9.1,Standing multi-agency coordination committee with terms of reference,D9,4.0,8.0,2,"E02, E03"
+D9.2,Terminal operators and industry integrated into the port plan,D9,4.0,7.0,2,"E02, E04"
+D9.3,"Public, media and affected-community communication protocol",D9,4.0,7.0,2,"E01, E03"

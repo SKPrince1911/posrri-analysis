@@ -36,31 +36,27 @@ EXCEL_FILENAME = "posrri_results.xlsx"
 def summary_frame(delphi_result: dict,
                   ahp_result: dict,
                   scoring_result: dict,
-                  sensitivity_result: dict,
-                  survey_result: "dict | None" = None) -> pd.DataFrame:
+                  sensitivity_result: dict) -> pd.DataFrame:
     """Headline numbers as a tidy metric/value/notes table."""
     d = delphi_result["summary"]
     a = ahp_result["summary"]
     o = scoring_result["overall"]
     s = sensitivity_result["summary"]
-    last = d["rounds"][-1]
 
     rows = [
         ("Index structure", f"{st.N_PILLARS} pillars / {st.N_DOMAINS} domains / "
                             f"{st.N_INDICATORS} indicators", ""),
-        ("Delphi experts", d["n_experts"], f"rounds {d['rounds']}"),
-        ("Indicators retained (I-CVI >= "
-         f"{config.ICVI_RETAIN_THRESHOLD})", d[f"n_retained_r{last}"],
-         f"of {d['n_indicators']} in round {last}"),
-        ("Indicators meeting consensus", d[f"n_consensus_r{last}"],
-         ">=80% rating 7-9, or median >=7 with IQR <=2"),
-        (f"S-CVI/Ave (round {last})", round(d[f"scvi_ave_r{last}"], 4),
-         f"target >= {config.SCVI_TARGET}; "
-         f"{'met' if d['scvi_target_met'] else 'not met'}"),
-        (f"S-CVI/UA (round {last})", round(d[f"scvi_ua_r{last}"], 4),
-         "proportion of items with universal agreement"),
-        ("Cohen's kappa, round 1 vs 2", round(d["cohens_kappa"], 4),
-         f"{d['n_decisions_changed']} decisions changed"),
+        ("Expert review panel", d["n_experts"],
+         ", ".join(d["experts"])),
+        ("Decision rule", d["rule"],
+         "no percentage threshold and no kappa: the panel is too small for "
+         "either to be informative"),
+        ("Indicators retained (all agree)", d["n_retained"],
+         f"of {d['n_indicators']} reviewed"),
+        ("Indicators for discussion", d["n_to_discuss"],
+         "at least one expert rated below the threshold"),
+        ("Lowest single rating", d["min_rating_overall"],
+         f"relevance threshold is {d['relevance_threshold']}"),
         ("AHP experts", a["n_experts"], f"{a['n_matrices']} matrices each"),
         ("AHP matrices with CR >= 0.10", a["n_inconsistent"],
          f"of {a['n_consistency_rows']} checked; max CR {a['max_CR']:.4f}"),
@@ -76,21 +72,6 @@ def summary_frame(delphi_result: dict,
         ("Spearman rho (AHP vs equal)", round(s["spearman_rho"], 4),
          f"p = {s['spearman_p']:.3g}; {s['n_rank_changes']} domains change rank"),
     ]
-    if survey_result is not None:
-        sv = survey_result["summary"]
-        rows += [
-            ("Survey respondents", sv["n_respondents"],
-             f"{sv['n_likert_items']} Likert, {sv['n_categorical_items']} coded, "
-             f"{sv['n_text_items']} free-text items"),
-            ("Cronbach's alpha (7-item scale)", round(sv["cronbach_alpha"], 4),
-             f"{sv['alpha_interpretation']}; {sv['alpha_n_respondents']} complete "
-             f"cases, {sv['alpha_n_excluded']} excluded"),
-            ("Mean Likert score", round(sv["mean_likert_overall"], 3),
-             f"highest {sv['highest_rated_item']}, lowest {sv['lowest_rated_item']}"),
-            ("Organisation groups represented", sv["n_org_groups"],
-             f"{sv['n_org_other']} free-text -> Other, "
-             f"{sv['n_org_missing']} left blank"),
-        ]
     return pd.DataFrame(rows, columns=["metric", "value", "notes"])
 
 
@@ -98,25 +79,17 @@ def collect_tables(delphi_result: dict,
                    ahp_result: dict,
                    scoring_result: dict,
                    sensitivity_result: dict,
-                   benchmark_0_100: "pd.DataFrame | None" = None,
-                   survey_result: "dict | None" = None
+                   benchmark_0_100: "pd.DataFrame | None" = None
                    ) -> "OrderedDict[str, pd.DataFrame]":
-    """Gather every result frame in reporting order.
-
-    ``survey_result`` is the output of :func:`src.survey_analysis.run_survey_analysis`;
-    pass it to append the survey descriptives, frequency tables and the
-    Cronbach's alpha item statistics. Omit it and the survey sheets are simply
-    absent, so the index tables can be exported without survey data.
-    """
+    """Gather every result frame in reporting order."""
     tables: "OrderedDict[str, pd.DataFrame]" = OrderedDict()
     tables["00_summary"] = summary_frame(
-        delphi_result, ahp_result, scoring_result, sensitivity_result,
-        survey_result=survey_result)
+        delphi_result, ahp_result, scoring_result, sensitivity_result)
     tables["01_index_structure"] = st.structure_frame()
     tables["02_delphi_per_indicator"] = delphi_result["per_indicator"]
-    tables["03_delphi_by_round"] = delphi_result["long"]
+    tables["03_delphi_ratings"] = delphi_result["ratings"]
     tables["04_delphi_retained"] = delphi_result["retained"]
-    tables["05_delphi_dropped"] = delphi_result["dropped"]
+    tables["05_delphi_to_discuss"] = delphi_result["to_discuss"]
     tables["06_ahp_consistency"] = ahp_result["consistency"]
     tables["07_ahp_pillar_weights"] = ahp_result["pillar_weights"]
     tables["08_ahp_domain_weights"] = ahp_result["domain_weights"]
@@ -128,15 +101,6 @@ def collect_tables(delphi_result: dict,
     tables["14_sensitivity_pillars"] = sensitivity_result["pillars"]
     if benchmark_0_100 is not None:
         tables["15_benchmark_0_100"] = benchmark_0_100.reset_index()
-    if survey_result is not None:
-        tables["16_survey_likert"] = survey_result["likert"]
-        tables["17_survey_frequencies"] = survey_result["frequencies"]
-        tables["18_survey_text"] = survey_result["text"]
-        tables["19_survey_alpha_items"] = survey_result["alpha"]["item_statistics"]
-        tables["20_survey_org_groups"] = survey_result["organisations"]
-        # The free-text coding audit: every distinct q12 answer and the group
-        # it was assigned, so the coding can be checked by hand.
-        tables["21_survey_org_audit"] = survey_result["org_audit"]
     return tables
 
 
